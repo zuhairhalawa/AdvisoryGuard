@@ -71,7 +71,7 @@ REVIEW REQUIRED (1 change needs review, 1 informational)
 
 Requires Node.js 20 or newer.
 
-From npm:
+From npm (published as [`advisoryguard@0.1.0`](https://www.npmjs.com/package/advisoryguard)):
 
 ```sh
 npm install --global advisoryguard
@@ -80,7 +80,7 @@ advisoryguard --help
 npx advisoryguard diff before.json after.json
 ```
 
-From source (works today):
+From source (for development or unreleased changes):
 
 ```sh
 git clone https://github.com/zuhairhalawa/AdvisoryGuard.git
@@ -215,8 +215,8 @@ This is a review aid, not a security boundary: it cannot decide whether an advis
 
 Pure JavaScript, so there is nothing platform-specific to compile. The GitHub Actions workflow runs the
 full pipeline on Ubuntu, macOS and Windows with Node 22 and 24, and installs the packed tarball on Node 20
-(the minimum supported version) on the same three systems. See `CHANGELOG.md` for what has been
-verified for each release.
+(the minimum supported version) on the same three systems. The first run of this workflow passed on
+all three systems. See `CHANGELOG.md` for what has been verified for each release.
 
 ## Development
 

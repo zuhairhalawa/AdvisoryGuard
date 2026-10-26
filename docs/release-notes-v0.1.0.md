@@ -22,7 +22,12 @@ package name through the web UI silently deleted the advisory's CVSS vector.
 ```sh
 npm install --global advisoryguard      # Node.js >= 20
 advisoryguard diff before.json after.json
+
+# or run without installing
+npx advisoryguard diff before.json after.json
 ```
+
+Published on npm as [`advisoryguard@0.1.0`](https://www.npmjs.com/package/advisoryguard).
 
 ## What was verified
 
@@ -40,7 +45,7 @@ advisoryguard diff before.json after.json
 - Cannot check that a renamed package exists in a registry (deliberately offline). Rename detection is a
   heuristic; unrelated package replacements are still reported for review.
 - CVSS v4 scores are not computed (v4 vectors are validated and compared metric by metric).
-- Validation uses Ajv only. Linux/macOS are covered by CI configuration; this release was developed and
-  tested locally on Windows.
+- Validation uses Ajv only. This release was developed and tested locally on Windows; the first GitHub
+  Actions CI run has since passed on Ubuntu, macOS and Windows.
 
 See the README for details. Third-party notices: OSV schema (Apache-2.0), test data (CC BY 4.0).

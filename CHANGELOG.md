@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-Initial release.
+Initial release. Published to npm as `advisoryguard@0.1.0` on 2026-10-26.
 
 - `advisoryguard validate <file>`: validates OSV records against the official OpenSSF OSV JSON schema
   (vendored unmodified, release v1.9.2, pinned commit and SHA-256 verified on load), plus extra checks
@@ -19,4 +19,6 @@ Verification performed for this release (local, Windows x64): typecheck, lint, 3
 Node 24, production build, `npm pack` + install into a fresh project + installed CLI runs (46 checks),
 tarball runtime check on Node 20.20, `npm audit` (0 vulnerabilities), a clean-copy rebuild, and validation of a
 350-record sample of genuine GitHub advisories (0 errors). Linux and macOS are exercised by the CI workflow
-only; it had not run at the time of this release.
+only; it had not run when these local checks were performed.
+
+Post-publication update: the first GitHub Actions CI run has since passed on Ubuntu, macOS and Windows.

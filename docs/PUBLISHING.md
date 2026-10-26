@@ -1,8 +1,19 @@
 # Publishing checklist for v0.1.0 (maintainer only)
 
-Nothing here has been run. Do these steps yourself, in order.
+Legend: **[x]** done and verified, **[ ]** pending or not verified.
+
+## Status summary
+
+- [x] Repository created and pushed (`zuhairhalawa/AdvisoryGuard`).
+- [x] First CI run passed on Ubuntu, macOS and Windows.
+- [x] Git tag `v0.1.0` exists on `origin` (it points at commit `907b151`).
+- [x] Published to npm as `advisoryguard@0.1.0` (public, `latest` dist-tag).
+- [ ] GitHub Release for `v0.1.0`: not verified. Check the Releases page; create it if it is missing (step 3).
+- [ ] Repository settings (topics, Private vulnerability reporting): not verified (step 1).
 
 ## 1. Create and push the repository
+
+Status: **done** (repository created, `main` pushed). The settings below were not re-checked.
 
 Repository name: `AdvisoryGuard` under `zuhairhalawa` (public, MIT).
 
@@ -13,6 +24,8 @@ Description (GitHub "About"):
 Topics: `osv`, `ghsa`, `github-advisory-database`, `security-advisories`, `cvss`, `vulnerability`,
 `supply-chain-security`, `json-schema`, `cli`, `nodejs`, `typescript`
 
+Commands used for the initial setup (kept for reference; do not re-run):
+
 ```sh
 git init -b main
 git add .
@@ -22,32 +35,40 @@ gh repo create zuhairhalawa/AdvisoryGuard --public --source . --description "Off
 gh repo edit zuhairhalawa/AdvisoryGuard --add-topic osv --add-topic ghsa --add-topic github-advisory-database --add-topic security-advisories --add-topic cvss --add-topic vulnerability --add-topic supply-chain-security --add-topic json-schema --add-topic cli --add-topic nodejs --add-topic typescript
 ```
 
-In the repository settings, enable **Security > Private vulnerability reporting** (SECURITY.md
-refers to it).
+Still to confirm:
+
+- [ ] Topics and description are set on the repository.
+- [ ] **Security > Private vulnerability reporting** is enabled (SECURITY.md refers to it).
 
 ## 2. Wait for CI
 
-The first push runs `.github/workflows/ci.yml` (Ubuntu/macOS/Windows x Node 22/24, packed-tarball
-runtime check on Node 20, `npm audit`, vendored-schema verification). Do not tag until it is green;
-fix anything the Linux/macOS runners reveal (they have not been run yet).
+Status: **done**. The first run of `.github/workflows/ci.yml` (Ubuntu/macOS/Windows x Node 22/24,
+packed-tarball runtime check on Node 20, `npm audit`, vendored-schema verification) passed, including
+the Linux and macOS runners that had not been exercised before.
 
 ## 3. Tag and release
 
+Status: **tag done, GitHub Release not verified.**
+
+- [x] Tag `v0.1.0` exists on `origin`.
+- [ ] GitHub Release `v0.1.0` is published with `docs/release-notes-v0.1.0.md` as its notes.
+
+If the Release does not exist yet, create it from the existing tag (do not move or re-create the tag):
+
 ```sh
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
 gh release create v0.1.0 --title "AdvisoryGuard v0.1.0" --notes-file docs/release-notes-v0.1.0.md
 ```
 
 ## 4. Publish to npm (needs your npm login / 2FA)
 
-```sh
-npm view advisoryguard        # should still 404 (name free); re-check right before publishing
-npm login
-npm publish --dry-run         # review the file list: dist/, vendor/, README, LICENSE, notices, changelog
-npm publish
-npx advisoryguard@0.1.0 --version   # smoke-test from a clean directory
-```
+Status: **done.** `advisoryguard@0.1.0` is publicly available on npm and is the `latest` dist-tag.
+Do not publish `0.1.0` again; any further change needs a new version.
 
-Then remove the "Status" note from the README ("If `npm install advisoryguard` does not find the
-package yet ...") and commit.
+- [x] `npm view advisoryguard@0.1.0 version` returns `0.1.0`.
+- [x] README "Status" note updated to say the package is available on npm.
+
+Optional smoke test from a clean directory:
+
+```sh
+npx advisoryguard@0.1.0 --version
+```
