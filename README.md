@@ -15,8 +15,7 @@ you exactly what disappeared, what changed, and why it deserves a second look.
 - Validates against the **official OpenSSF OSV JSON schema** (vendored, pinned and hash-checked).
 - Pure Node.js (>= 20, no native code), one runtime dependency (`ajv`).
 
-> **Status:** v0.1.0, first release. If `npm install advisoryguard` does not find the package yet,
-> it has not been published; install from source or a packed tarball (see [Install](#install)).
+> **Status:** v0.1.0 is available on npm! Install with `npm install -g advisoryguard` or run it directly with `npx advisoryguard --version`.
 
 ## Quick demo
 
@@ -72,7 +71,7 @@ REVIEW REQUIRED (1 change needs review, 1 informational)
 
 Requires Node.js 20 or newer.
 
-From npm (once published):
+From npm:
 
 ```sh
 npm install --global advisoryguard
