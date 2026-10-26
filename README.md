@@ -17,6 +17,51 @@ you exactly what disappeared, what changed, and why it deserves a second look.
 
 > **Status:** v0.1.0 is available on npm! Install with `npm install -g advisoryguard` or run it directly with `npx advisoryguard --version`.
 
+<p align="center">
+  <img src="docs/assets/advisoryguard-cvss-removal-demo.gif" alt="Terminal recording: advisoryguard diff compares test/fixtures/regression-before.json with regression-after-bug.json. It reports two REVIEW findings, severity-removed for CVSS_V3 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H, base score 9.8, Critical) and for CVSS_V4, plus a package-renamed finding for @acme/parsr to @acme/parser, and finishes with REVIEW REQUIRED (3 changes need review, 1 informational) and exit code 1." width="880">
+</p>
+
+<p align="center"><sub>The real CLI run on this repository's regression fixtures: a package rename that silently dropped the CVSS v3 and v4 entries.</sub></p>
+
+<details>
+<summary>Text version of the animation (exact CLI output)</summary>
+
+```text
+$ advisoryguard diff test/fixtures/regression-before.json test/fixtures/regression-after-bug.json
+AdvisoryGuard diff
+  before: test/fixtures/regression-before.json
+  after:  test/fixtures/regression-after-bug.json
+  id:     GHSA-4xq9-w7rh-c3p2
+
+Validation of test/fixtures/regression-after-bug.json
+
+WARNING no-severity  severity
+  No CVSS severity is present. If this advisory previously had one, make sure it was not dropped by an edit.
+
+Changes
+
+REVIEW  severity-removed  severity[CVSS_V3]
+  CVSS_V3 severity was removed: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H (base score 9.8, Critical).
+  Why: A CVSS entry is what scanners and Dependabot use to rate this advisory. Editing an unrelated field (such as a package name) should never delete it. If the removal is not intentional, restore the entry.
+
+REVIEW  severity-removed  severity[CVSS_V4]
+  CVSS_V4 severity was removed: CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N.
+  Why: A CVSS entry is what scanners and Dependabot use to rate this advisory. Editing an unrelated field (such as a package name) should never delete it. If the removal is not intentional, restore the entry.
+
+REVIEW  package-renamed  affected[npm/@acme/parser].package.name
+  Package name changed from "@acme/parsr" to "@acme/parser" (npm).
+  Why: The advisory now flags a different package. Correcting a typo is normal, but verify the new name exists in the registry, and that the severity, version ranges and references were left untouched by the edit.
+
+INFO    modified-updated  modified
+  modified timestamp updated: 2026-03-02T10:15:30Z -> 2026-03-05T14:00:00Z. This is expected for any edit and is not a vulnerability change.
+
+REVIEW REQUIRED (3 changes need review, 1 informational)
+```
+
+Exit code: `1` (changes that require human review).
+
+</details>
+
 ## Quick demo
 
 `regression-before.json` is an advisory with CVSS v3 + v4 and two packages. In
