@@ -8,12 +8,15 @@ Legend: **[x]** done and verified, **[ ]** pending or not verified.
 - [x] First CI run passed on Ubuntu, macOS and Windows.
 - [x] Git tag `v0.1.0` exists on `origin` (it points at commit `907b151`).
 - [x] Published to npm as `advisoryguard@0.1.0` (public, `latest` dist-tag).
-- [ ] GitHub Release for `v0.1.0`: not verified. Check the Releases page; create it if it is missing (step 3).
-- [ ] Repository settings (topics, Private vulnerability reporting): not verified (step 1).
+- [x] GitHub Release for `v0.1.0` is published (not a draft, not a pre-release): https://github.com/zuhairhalawa/AdvisoryGuard/releases/tag/v0.1.0
+- [x] CI run #40367715585 completed with conclusion `success` (commit `907b151`).
+- [x] Repository homepage is `https://www.npmjs.com/package/advisoryguard`.
+- [x] Repository topics are set (see step 1).
+- [ ] Private vulnerability reporting: not verified (step 1).
 
 ## 1. Create and push the repository
 
-Status: **done** (repository created, `main` pushed). The settings below were not re-checked.
+Status: **done** (repository created, `main` pushed). Topics and homepage were verified; Private vulnerability reporting was not.
 
 Repository name: `AdvisoryGuard` under `zuhairhalawa` (public, MIT).
 
@@ -21,10 +24,13 @@ Description (GitHub "About"):
 
 > Offline CLI that validates OSV / GitHub Security Advisory JSON against the official OSV schema and flags accidental data loss, such as deleted CVSS vectors, when an advisory is edited.
 
-Topics: `osv`, `ghsa`, `github-advisory-database`, `security-advisories`, `cvss`, `vulnerability`,
-`supply-chain-security`, `json-schema`, `cli`, `nodejs`, `typescript`
+Topics (as verified on GitHub): `security`, `osv`, `cvss`, `typescript`, `cli`,
+`security-advisories`, `supply-chain-security`
 
-Commands used for the initial setup (kept for reference; do not re-run):
+Homepage (as verified on GitHub): https://www.npmjs.com/package/advisoryguard
+
+Commands used for the initial setup (kept for reference; do not re-run). The topic list in the last
+command is the original plan; the topics actually set on the repository are the ones listed above:
 
 ```sh
 git init -b main
@@ -37,7 +43,7 @@ gh repo edit zuhairhalawa/AdvisoryGuard --add-topic osv --add-topic ghsa --add-t
 
 Still to confirm:
 
-- [ ] Topics and description are set on the repository.
+- [x] Topics and homepage are set on the repository (the description is also set).
 - [ ] **Security > Private vulnerability reporting** is enabled (SECURITY.md refers to it).
 
 ## 2. Wait for CI
@@ -48,16 +54,12 @@ the Linux and macOS runners that had not been exercised before.
 
 ## 3. Tag and release
 
-Status: **tag done, GitHub Release not verified.**
+Status: **done** (tag exists; GitHub Release is published).
 
 - [x] Tag `v0.1.0` exists on `origin`.
-- [ ] GitHub Release `v0.1.0` is published with `docs/release-notes-v0.1.0.md` as its notes.
+- [x] GitHub Release `v0.1.0` ("AdvisoryGuard v0.1.0") is published, not a draft or pre-release.
 
-If the Release does not exist yet, create it from the existing tag (do not move or re-create the tag):
-
-```sh
-gh release create v0.1.0 --title "AdvisoryGuard v0.1.0" --notes-file docs/release-notes-v0.1.0.md
-```
+Do not move or re-create the tag or the Release.
 
 ## 4. Publish to npm (needs your npm login / 2FA)
 
