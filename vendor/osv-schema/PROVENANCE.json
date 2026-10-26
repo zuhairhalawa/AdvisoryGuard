@@ -1,0 +1,12 @@
+{
+  "name": "OSV schema",
+  "repository": "https://github.com/ossf/osv-schema",
+  "path": "validation/schema.json",
+  "tag": "v1.9.2",
+  "commit": "c8a57bdc5b0bc54646e140cabbb7834bd0b5aec9",
+  "sha256": "15b10dbb4c4e31c7aae11d22cdd991a9a374758db7c8389e62b3cc37cac92653",
+  "license": "Apache-2.0",
+  "licenseFile": "LICENSE",
+  "modified": false,
+  "retrieved": "2026-10-26"
+}

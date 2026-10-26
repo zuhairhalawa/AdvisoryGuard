@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.6.0",
+  "id": "GHSA-4xq9-w7rh-c3p2",
+  "modified": "2026-03-05T14:00:00Z",
+  "published": "2026-02-20T08:00:00Z",
+  "aliases": ["CVE-2026-10001"],
+  "summary": "Prototype pollution in @acme/parsr allows remote code execution",
+  "details": "The merge helper in @acme/parsr (and the Python port acme-parser) copies attacker-controlled keys onto Object.prototype, which can be chained into remote code execution.\n\n### Impact\nApplications that parse untrusted configuration are affected.\n\n### Patches\nUpgrade to 2.4.1 (npm) or 1.9.3 (PyPI).",
+  "affected": [
+    {
+      "package": { "ecosystem": "npm", "name": "@acme/parser" },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [ { "introduced": "0" }, { "fixed": "2.4.1" } ]
+        }
+      ]
+    },
+    {
+      "package": { "ecosystem": "PyPI", "name": "acme-parser" },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [ { "introduced": "1.0.0" }, { "fixed": "1.9.3" } ]
+        },
+        {
+          "type": "ECOSYSTEM",
+          "events": [ { "introduced": "0.5.0" }, { "last_affected": "0.9.9" } ]
+        }
+      ]
+    }
+  ],
+  "references": [
+    { "type": "ADVISORY", "url": "https://github.com/acme/parser/security/advisories/GHSA-4xq9-w7rh-c3p2" },
+    { "type": "ADVISORY", "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-10001" },
+    { "type": "FIX", "url": "https://github.com/acme/parser/commit/0123456789abcdef0123456789abcdef01234567" },
+    { "type": "WEB", "url": "https://github.com/acme/parser/releases/tag/v2.4.1" }
+  ],
+  "database_specific": {
+    "cwe_ids": ["CWE-1321", "CWE-94"],
+    "severity": "CRITICAL",
+    "github_reviewed": true,
+    "github_reviewed_at": "2026-02-21T09:00:00Z",
+    "nvd_published_at": "2026-02-20T12:00:00Z"
+  }
+}

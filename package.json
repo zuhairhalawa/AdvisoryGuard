@@ -1,0 +1,72 @@
+{
+  "name": "advisoryguard",
+  "version": "0.1.0",
+  "description": "Detect accidental data loss and risky metadata changes (e.g. deleted CVSS vectors) when editing OSV / GitHub Security Advisory records.",
+  "keywords": [
+    "osv",
+    "security-advisory",
+    "github-advisory-database",
+    "ghsa",
+    "cvss",
+    "cli",
+    "advisory",
+    "diff",
+    "validator"
+  ],
+  "homepage": "https://github.com/zuhairhalawa/AdvisoryGuard#readme",
+  "bugs": {
+    "url": "https://github.com/zuhairhalawa/AdvisoryGuard/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zuhairhalawa/AdvisoryGuard.git"
+  },
+  "license": "MIT",
+  "author": "zuhairhalawa",
+  "type": "module",
+  "bin": {
+    "advisoryguard": "dist/cli/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "vendor",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "verify:pack": "node scripts/verify-pack.mjs",
+    "verify:schema": "node scripts/osv-schema.mjs verify",
+    "update:schema": "node scripts/osv-schema.mjs update",
+    "prepack": "npm run build",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.13.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "database_specific": {
+    "nvd_published_at": "2026-02-20T12:00:00Z",
+    "github_reviewed_at": "2026-02-21T09:00:00Z",
+    "github_reviewed": true,
+    "severity": "CRITICAL",
+    "cwe_ids": ["CWE-94", "CWE-1321"]
+  },
+  "references": [
+    { "type": "WEB", "url": "https://github.com/acme/parser/releases/tag/v2.4.1" },
+    { "type": "FIX", "url": "https://github.com/acme/parser/commit/0123456789abcdef0123456789abcdef01234567" },
+    { "type": "ADVISORY", "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-10001" },
+    { "type": "ADVISORY", "url": "https://github.com/acme/parser/security/advisories/GHSA-4xq9-w7rh-c3p2" }
+  ],
+  "affected": [
+    {
+      "package": { "name": "acme-parser", "ecosystem": "PyPI" },
+      "ranges": [
+        { "events": [ { "last_affected": "0.9.9" }, { "introduced": "0.5.0" } ], "type": "ECOSYSTEM" },
+        { "events": [ { "fixed": "1.9.3" }, { "introduced": "1.0.0" } ], "type": "ECOSYSTEM" }
+      ]
+    },
+    {
+      "package": { "ecosystem": "npm", "name": "@acme/parser" },
+      "ranges": [
+        { "type": "ECOSYSTEM", "events": [ { "introduced": "0" }, { "fixed": "2.4.1" } ] }
+      ]
+    }
+  ],
+  "severity": [
+    { "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", "type": "CVSS_V4" },
+    { "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "type": "CVSS_V3" }
+  ],
+  "details": "The merge helper in @acme/parsr (and the Python port acme-parser) copies attacker-controlled keys onto Object.prototype, which can be chained into remote code execution.\n\n### Impact\nApplications that parse untrusted configuration are affected.\n\n### Patches\nUpgrade to 2.4.1 (npm) or 1.9.3 (PyPI).",
+  "summary": "Prototype pollution in @acme/parsr allows remote code execution",
+  "aliases": ["CVE-2026-10001"],
+  "published": "2026-02-20T08:00:00Z",
+  "modified": "2026-03-05T14:00:00.000Z",
+  "id": "GHSA-4xq9-w7rh-c3p2",
+  "schema_version": "1.6.0"
+}

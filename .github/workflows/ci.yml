@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Full development pipeline. Needs Node >= 22.12 because the test runner (vitest 5) does.
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Pack, install into a fresh project and run the installed CLI
+        run: npm run verify:pack
+
+  # Builds the one tarball that the runtime-compatibility job installs.
+  pack:
+    name: build tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: advisoryguard-*.tgz
+          if-no-files-found: error
+
+  # Runtime compatibility: the packed CLI must run on the oldest supported Node (engines.node
+  # is ">=20"). No dev tools are installed here, which is why this does not need Node 22.
+  runtime-compat:
+    name: runtime (${{ matrix.os }}, node ${{ matrix.node }})
+    needs: pack
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball
+      - name: Install the tarball in a fresh project and run the installed CLI
+        shell: bash
+        run: node scripts/verify-pack.mjs --tarball "$(ls advisoryguard-*.tgz)"
+
+  security:
+    name: audit and schema integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - name: Vendored OSV schema is byte-identical to upstream at the pinned commit
+        run: npm run verify:schema

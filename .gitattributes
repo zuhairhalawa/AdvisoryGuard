@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.json text eol=lf
+*.ts text eol=lf
+# Byte-exact upstream material: never rewrite line endings (hashes are verified).
+vendor/** -text
+test/fixtures/real/** -text
