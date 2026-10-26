@@ -12,11 +12,11 @@ Legend: **[x]** done and verified, **[ ]** pending or not verified.
 - [x] CI run #40367715585 completed with conclusion `success` (commit `907b151`).
 - [x] Repository homepage is `https://www.npmjs.com/package/advisoryguard`.
 - [x] Repository topics are set (see step 1).
-- [ ] Private vulnerability reporting: not verified (step 1).
+- [x] Private vulnerability reporting is enabled (verified 2026-10-26 via the GitHub API: `enabled: true`).
 
 ## 1. Create and push the repository
 
-Status: **done** (repository created, `main` pushed). Topics and homepage were verified; Private vulnerability reporting was not.
+Status: **done** (repository created, `main` pushed). Topics, homepage and Private vulnerability reporting were verified.
 
 Repository name: `AdvisoryGuard` under `zuhairhalawa` (public, MIT).
 
@@ -41,10 +41,10 @@ gh repo create zuhairhalawa/AdvisoryGuard --public --source . --description "Off
 gh repo edit zuhairhalawa/AdvisoryGuard --add-topic osv --add-topic ghsa --add-topic github-advisory-database --add-topic security-advisories --add-topic cvss --add-topic vulnerability --add-topic supply-chain-security --add-topic json-schema --add-topic cli --add-topic nodejs --add-topic typescript
 ```
 
-Still to confirm:
+Confirmed:
 
 - [x] Topics and homepage are set on the repository (the description is also set).
-- [ ] **Security > Private vulnerability reporting** is enabled (SECURITY.md refers to it).
+- [x] **Security > Private vulnerability reporting** is enabled (SECURITY.md refers to it). Enabled 2026-10-26 with `gh api -X PUT repos/zuhairhalawa/AdvisoryGuard/private-vulnerability-reporting`; verified with `gh api repos/zuhairhalawa/AdvisoryGuard/private-vulnerability-reporting` returning `{"enabled":true}`.
 
 ## 2. Wait for CI
 
