@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
-This changes finding codes and allow-list coverage. The cases come from running the tool on real advisory edits.
+This release changes finding codes and allow-list coverage, but not which edits need review when no allow list is
+used. The cases come from running the tool on real advisory edits. See the
+[release notes](https://github.com/zuhairhalawa/AdvisoryGuard/blob/main/docs/release-notes-v0.3.0.md) for what to
+check.
 
 - New `sibling-package-unchanged` finding: a range end changed for one package but not for another in the same
   advisory that had the same version data. A changed start does not count, because packages can have different

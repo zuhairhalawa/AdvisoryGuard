@@ -132,8 +132,8 @@ git clone https://github.com/zuhairhalawa/AdvisoryGuard.git
 cd AdvisoryGuard
 npm ci
 npm run build
-npm pack                       # creates advisoryguard-0.2.0.tgz
-npm install --global ./advisoryguard-0.2.0.tgz
+npm pack                       # creates advisoryguard-0.3.0.tgz
+npm install --global ./advisoryguard-0.3.0.tgz
 ```
 
 ## Usage

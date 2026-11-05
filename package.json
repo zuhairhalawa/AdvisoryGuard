@@ -1,6 +1,6 @@
 {
   "name": "advisoryguard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Detect accidental data loss and risky metadata changes (e.g. deleted CVSS vectors) when editing OSV / GitHub Security Advisory records.",
   "keywords": [
     "osv",
