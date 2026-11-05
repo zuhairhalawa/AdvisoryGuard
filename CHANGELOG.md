@@ -2,8 +2,9 @@
 
 ## 0.2.0
 
-This release changes finding codes, allow-list coverage and some exit codes. See
-`docs/release-notes-v0.2.0.md` for what to check.
+This release changes finding codes, allow-list coverage and some exit codes. See the
+[release notes](https://github.com/zuhairhalawa/AdvisoryGuard/blob/main/docs/release-notes-v0.2.0.md) for what to
+check.
 
 Terminal output
 
@@ -41,18 +42,22 @@ Limits
   identical items and long lists of removed references no longer take quadratic time. This is not a limit on
   total run time.
 - `pairing-limit` findings now also cover range, custom and severity lists over the per-list limit, and their
-  counts match the entries reported separately. A notice is given only when the skipped items could have been
-  paired.
+  counts match the entries reported separately. Lists whose items can never pair, such as lists of strings, give
+  no such finding.
 - `pairing-limit` now needs review instead of being informational, because the comparison is incomplete. Allowing
   the removed and added codes no longer makes such a run pass; `--allow pairing-limit` accepts it explicitly.
 - Array order no longer decides a result. Score ties are broken by content instead of position, and the work
-  budget is spent in content order. Before this, reordering an array could change a finding's code and, with an
-  allow list, the exit code.
+  budget is spent in content order. Before this, reordering an array could change a finding's code and the exit
+  code.
 
 Invalid input
 
 - An object as a range `type` or `repo`, and very large numbers of schema errors, now exit 2. They used to stop
   with an internal error (exit 70).
+
+Verification for this release: typecheck, lint and all tests on Ubuntu, macOS and Windows with Node 22 and 24 in
+CI, and on Windows with Node 24 locally; the packed tarball on Node 20 on the same three systems in CI; `npm audit`
+with no known vulnerabilities; and the vendored schema check.
 
 ## 0.1.0
 

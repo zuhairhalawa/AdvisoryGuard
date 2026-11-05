@@ -1216,8 +1216,12 @@ describe("a matching limit in the verdict", () => {
     expect(notice?.why).toMatch(/not fully compared/);
   });
 
-  it("does not need review below the limit", () => {
-    expect(codes(diff(doc(FIXED), doc(FIXED)))).toEqual([]);
+  it("does not appear below the limit", () => {
+    const few = (prefix: string): JsonObject =>
+      doc(FIXED, { affected: [0, 1, 2].map((i) => ({ package: { ecosystem: "npm", name: `${prefix}${i}` }, versions: [`${i}.0.0`] })) });
+    const r = diff(few("b"), few("a"));
+    expect(r.findings.length).toBeGreaterThan(0);
+    expect(codes(r)).not.toContain("pairing-limit");
   });
 });
 
