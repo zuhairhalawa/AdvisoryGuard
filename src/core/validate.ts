@@ -475,7 +475,8 @@ export function validateAdvisory(data: JsonObject, duplicateKeys: DuplicateKey[]
         message: `The record does not conform to the OSV schema${first?.message ? `: ${first.message}` : ""}.`,
       });
     }
-    findings.push(...mapped);
+    // One at a time: spreading a very long list as arguments overflows the call stack.
+    for (const f of mapped) findings.push(f);
   }
 
   // GitHub's REST/GraphQL advisory objects are a different format from OSV; say so plainly.

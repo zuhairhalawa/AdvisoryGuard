@@ -38,6 +38,11 @@ Limits
   counts match the entries reported separately. A range notice is given only when the skipped ranges could have
   been paired.
 
+Invalid input
+
+- An object as a range `type` or `repo`, and very large numbers of schema errors, now exit 2. They used to stop
+  with an internal error (exit 70).
+
 ## 0.1.0
 
 Initial release. Published to npm as `advisoryguard@0.1.0` on 2026-10-26.

@@ -99,6 +99,15 @@ function normalizeName(n: string): string {
   return n.toLowerCase().split("_").join("-").split(".").join("-");
 }
 
+/**
+ * Text for a value that should be a string. Invalid data can hold objects that String() cannot convert,
+ * and this runs for every scored pair, so it must stay cheap.
+ */
+function textOf(v: JsonValue | undefined, fallback: string): string {
+  if (v === undefined || v === null) return fallback;
+  return typeof v === "object" ? "(invalid)" : String(v);
+}
+
 function previewList(values: string[], max = 6): string {
   const shown = values.slice(0, max).map((v) => shorten(v, 40)).join(", ");
   return values.length > max ? `${shown}, and ${values.length - max} more` : shown;
@@ -194,7 +203,7 @@ function reportBoundConversions(
 function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, out: Finding[], ctx: MatchContext): void {
   const bs = asObjectArray(getOwn(b, "ranges"));
   const as = asObjectArray(getOwn(a, "ranges"));
-  const rangeId = (r: JsonObject): string => `${String(getOwn(r, "type") ?? "?")}|${String(getOwn(r, "repo") ?? "")}`;
+  const rangeId = (r: JsonObject): string => `${textOf(getOwn(r, "type"), "?")}|${textOf(getOwn(r, "repo"), "")}`;
   const { pairs, restB, restA, skipped } = pairItems(
     bs,
     as,
@@ -214,7 +223,7 @@ function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, o
     const rb = bs[bi];
     const ra = as[ai];
     if (!rb || !ra) continue;
-    const rtype = String(getOwn(rb, "type") ?? "range");
+    const rtype = textOf(getOwn(rb, "type"), "range");
     const where = `${rtype} range of ${label}`;
     const valuesOf = (r: JsonObject, kind: EventKind): string[] =>
       asObjectArray(getOwn(r, "events")).map((e) => getOwn(e, kind)).filter(isString);
@@ -288,7 +297,7 @@ function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, o
       code: "range-removed",
       level: "review",
       path,
-      message: `${String(getOwn(r, "type") ?? "A")} range removed from ${label}: ${previewList(eventTokens(r))}.`,
+      message: `${textOf(getOwn(r, "type"), "A")} range removed from ${label}: ${previewList(eventTokens(r))}.`,
       why: "Removing a whole range stops flagging every version it covered.",
       before: canonical(r),
     });
@@ -300,7 +309,7 @@ function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, o
       code: "range-added",
       level: "review",
       path,
-      message: `${String(getOwn(r, "type") ?? "A")} range added to ${label}: ${previewList(eventTokens(r))}.`,
+      message: `${textOf(getOwn(r, "type"), "A")} range added to ${label}: ${previewList(eventTokens(r))}.`,
       why: "A new range marks additional versions as vulnerable.",
       after: canonical(r),
     });

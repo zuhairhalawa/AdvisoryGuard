@@ -1025,6 +1025,59 @@ describe("conversion wording in cases the tool can tell apart", () => {
   });
 });
 
+describe("invalid input is reported as invalid, not as an internal error", () => {
+  const hostileType = { toString: 1, valueOf: 1 };
+
+  it("handles an object as a range type or repo, whether or not the ranges pair", () => {
+    const withHostile = (events: JsonObject[]): JsonObject => {
+      const d = doc(events);
+      const range = (d["affected"] as any)[0].ranges[0];
+      range.type = hostileType;
+      range.repo = hostileType;
+      return d;
+    };
+    // Removed and added ranges.
+    expect(cliDiff(doc(FIXED), withHostile(FIXED)).code).toBe(2);
+    // The edited file is valid here, so the ranges are simply reported as removed and added.
+    expect(cliDiff(withHostile(FIXED), doc(FIXED)).code).toBe(1);
+    // Paired ranges with a changed event.
+    const paired = cliDiff(withHostile(FIXED), withHostile([{ introduced: "0" }, { fixed: "24.0.0" }]));
+    expect(paired.code).toBe(2);
+    expect(paired.out).toContain("23.0.0 -> 24.0.0");
+  });
+
+  it("does not make scoring slower for invalid range types", () => {
+    const big = { ...Object.fromEntries(Array.from({ length: 2000 }, (_, i) => [`k${i}`, i])) };
+    const ranges = (fixed: string): JsonObject[] =>
+      Array.from({ length: 200 }, (_, i) => ({ type: big, events: [{ introduced: `${i}` }, { fixed }] })) as unknown as JsonObject[];
+    const t0 = Date.now();
+    const out: Finding[] = [];
+    diffAffected(
+      [{ package: { ecosystem: "npm", name: "p" }, ranges: ranges("1") }],
+      [{ package: { ecosystem: "npm", name: "p" }, ranges: ranges("2") }],
+      out,
+    );
+    expect(Date.now() - t0).toBeLessThan(10000);
+    expect(out.filter((f) => f.code === "range-event-changed")).toHaveLength(200);
+  });
+
+  it("uses the usual wording when a range type is null", () => {
+    const withNull = (fixed: string): JsonObject[] => [
+      { package: { ecosystem: "npm", name: "p" }, ranges: [{ type: null, events: [{ introduced: "0" }, { fixed }] }] },
+    ] as unknown as JsonObject[];
+    const out: Finding[] = [];
+    diffAffected(withNull("1"), withNull("2"), out);
+    expect(out[0]?.message).toContain("in range range of npm/p");
+  });
+
+  it("handles a very large number of schema errors", () => {
+    const text = JSON.stringify(doc(FIXED, { references: Array.from({ length: 200_000 }, () => 1) }));
+    const result = validateText(text);
+    expect(result.valid).toBe(false);
+    expect(result.findings.length).toBeGreaterThan(100_000);
+  });
+});
+
 describe("limits outside affected", () => {
   const over = Math.ceil(Math.sqrt(MAX_PAIR_CANDIDATES)) + 1;
 
