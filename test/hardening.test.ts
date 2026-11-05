@@ -189,17 +189,26 @@ describe("range end changing kind", () => {
     expectNonCommittalExplanation(f);
   });
 
-  it("reports an interval count change as one conversion plus the removed introduced event", () => {
+  it("does not call it a conversion when the number of ends changes", () => {
     const r = diff(
       doc([{ introduced: "0" }, { last_affected: "2.0.0" }, { introduced: "5.0.0" }, { last_affected: "6.0.0" }]),
       doc([{ introduced: "0" }, { fixed: "7.0.0" }]),
     );
-    expect(codes(r).sort()).toEqual(["range-bound-converted", "range-event-removed"]);
-    const f = onlyConversion(r.findings);
-    expect(f.before).toEqual(["2.0.0", "6.0.0"]);
-    expect(f.after).toEqual(["7.0.0"]);
-    expect(f.message).toMatch(/not paired/);
+    expect(codes(r)).not.toContain("range-bound-converted");
+    expect(codes(r).sort()).toEqual(["range-event-added", "range-event-removed", "range-event-removed", "range-event-removed"]);
     expect(r.findings.map((x) => x.why ?? "").join(" ")).not.toMatch(/open-ended|ends the vulnerable range earlier/);
+  });
+
+  it("does not let the conversion code clear an edit that leaves a later interval without an end", () => {
+    const allow = ["range-bound-converted"];
+    const before = doc([{ introduced: "0" }, { last_affected: "1.0.0" }, { introduced: "2.0.0" }, { last_affected: "3.0.0" }]);
+    const after = doc([{ introduced: "0" }, { fixed: "9.0.0" }, { introduced: "2.0.0" }]);
+    expect(validateText(JSON.stringify(after)).valid).toBe(true);
+    expect(diff(before, after, allow).status).toBe("review");
+    expect(cliDiff(before, after, ["--allow", "range-bound-converted"]).code).toBe(1);
+    const reverse = doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "2.0.0" }, { fixed: "3.0.0" }]);
+    const toOne = doc([{ introduced: "0" }, { last_affected: "9.0.0" }, { introduced: "2.0.0" }]);
+    expect(diff(reverse, toOne, allow).status).toBe("review");
   });
 
   it("still needs review unless the conversion code is explicitly allowed", () => {
@@ -794,6 +803,17 @@ describe("keys the dedicated comparers do not read", () => {
     expect(new Set(r.findings.map((f) => f.path)).size).toBe(2);
   });
 
+  it("keeps a report for a very long URL small enough to print", () => {
+    const long = `https://example.test/${"a".repeat(100_000)}`;
+    const keys = (note: boolean): JsonObject =>
+      Object.fromEntries(Array.from({ length: 3000 }, (_, i) => [`k${i}`, note ? "x" : undefined]).filter(([, v]) => v !== undefined));
+    const before = doc(FIXED, { references: [{ type: "WEB", url: long, ...keys(true) }] });
+    const after = doc(FIXED, { references: [{ type: "WEB", url: long }] });
+    const r = cliDiff(before, after);
+    expect(r.code).toBe(1);
+    expect(diff(before, after).findings.every((f) => f.path.length < 300)).toBe(true);
+  });
+
   it("does not lose keys on an item with no identity", () => {
     const out: Finding[] = [];
     diffSeverity([{ note: "x" }], [], "severity", "", out);
@@ -804,6 +824,29 @@ describe("keys the dedicated comparers do not read", () => {
     const before = doc([{ introduced: "0", note: "x" }, { fixed: "1.0.0", other: "y" }]);
     const after = doc([{ fixed: "1.0.0", other: "y" }, { note: "x", introduced: "0" }]);
     expect(diff(before, after).findings).toEqual([]);
+  });
+});
+
+describe("a reference entry removed while its URL stays", () => {
+  const url = "https://example.test/advisory";
+
+  it("needs review when a type is lost and nothing replaces it", () => {
+    const r = diff(
+      doc(FIXED, { references: [{ type: "WEB", url }, { type: "ADVISORY", url }] }),
+      doc(FIXED, { references: [{ type: "WEB", url }] }),
+    );
+    expect(reviewCodes(r)).toEqual(["reference-removed"]);
+    expect(r.findings[0]?.message).toContain("ADVISORY");
+    expect(r.findings[0]?.before).toBe(url);
+  });
+
+  it("stays informational when a type is only replaced or added", () => {
+    const replaced = diff(doc(FIXED, { references: [{ type: "WEB", url }] }), doc(FIXED, { references: [{ type: "ADVISORY", url }] }));
+    expect(codes(replaced)).toEqual(["reference-type-changed"]);
+    expect(replaced.status).toBe("clean");
+    const added = diff(doc(FIXED, { references: [{ type: "WEB", url }] }), doc(FIXED, { references: [{ type: "WEB", url }, { type: "ADVISORY", url }] }));
+    expect(codes(added)).toEqual(["reference-type-changed"]);
+    expect(added.status).toBe("clean");
   });
 });
 
@@ -1101,6 +1144,19 @@ describe("limits outside affected", () => {
     expect(notices.map((f) => f.path)).toEqual(["database_specific.list"]);
     expect(notices[0]?.level).toBe("review");
     expect(notices[0]?.message).toMatch(/may be reported as removed and added/);
+  });
+
+  it("does not give one when the list items could never have been paired", () => {
+    const mk = (tag: string): JsonObject =>
+      doc(FIXED, { database_specific: { list: Array.from({ length: over }, (_, i) => `${tag}-${i}`) } });
+    const strings = diff(mk("a"), mk("b"));
+    expect(codes(strings)).not.toContain("pairing-limit");
+    expect(diff(mk("a"), mk("b"), ["list-item-removed"]).status).toBe("clean");
+
+    const severity = (tag: string): JsonObject[] => Array.from({ length: over }, (_, i) => ({ type: `${tag}${i}`, score: "x" }));
+    const out: Finding[] = [];
+    diffSeverity(severity("a"), severity("b"), "severity", "", out);
+    expect(out.map((f) => f.code)).not.toContain("pairing-limit");
   });
 
   it("does not give one below the limit", () => {

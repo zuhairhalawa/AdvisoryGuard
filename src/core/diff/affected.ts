@@ -170,7 +170,9 @@ function reportBoundConversions(
     const [before] = olds;
     const [after] = news;
     if (before === undefined || after === undefined) continue;
-    const single = olds.length === 1 && news.length === 1;
+    // A different number of ends means an interval gained or lost one, which is more than a change of kind.
+    if (olds.length !== news.length) continue;
+    const single = olds.length === 1;
     const sameValue = single && before === after;
     const newValues = new Set(news);
     const lostPatched = to === "last_affected" && noPatched ? `, and ${noPatched}` : "";

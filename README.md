@@ -202,7 +202,7 @@ references, scheme-less URLs, non-semver versions in a SEMVER range, ...). JSON 
 mode, so a genuine GitHub record with a scheme-less reference URL is valid with a warning.
 
 **diff** - semantic comparison, independent of key order, array order and formatting. Reordering an array can
-change only the order findings are listed in and the indexes in custom-list paths:
+change only the order findings and values are shown in, and the indexes in custom-list paths:
 
 | Area | Behavior |
 | --- | --- |
@@ -211,7 +211,7 @@ change only the order findings are listed in and the indexes in custom-list path
 | ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. removing the only `fixed` leaves the range open-ended). Replacing `last_affected` with `fixed` (or the reverse) in a range = one review finding (`range-bound-converted`), because `last_affected` is an inclusive end and `fixed` an exclusive one, so affected status may change and needs checking against the package's release history (the repository's history for a GIT range). Several values of one kind in a range are listed without being paired. Explicit `versions[]` additions/removals = review. |
 | references, aliases, related, upstream | Removal = review (lost provenance / cross-references); addition = info. URLs compared ignoring trailing slash and host case. |
 | CWE (`database_specific.cwe_ids`), GitHub severity label | Removal/change = review; addition = info. |
-| `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). |
+| `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). Two exceptions = info: setting a missing `published`, and changing the date of an existing `withdrawn`. |
 | `modified` | Updated = **info** (expected). Moving backwards or deleting = review. |
 | `summary` / `details` | Wording edits = info. Emptied = review. `details` shrinking below half of its length (if >= 200 chars) = review (heuristic). |
 | Everything else | Generic structural diff: a removed field/list item is **never silent** (review); additions and most value changes are info; changed values of fields whose name contains severity/cwe/cve/fix/patch/affect/version/range/score are review. Other keys inside event, severity and reference objects are compared the same way, matched by event value, severity type or URL. |
@@ -239,8 +239,11 @@ and every such finding says why.
 - Rename detection is heuristic: when exactly one unmatched affected entry per ecosystem remains
   on each side it is treated as the same entry. A genuine "replace package A with unrelated package B"
   edit looks the same and is still reported as review.
-- A key dropped from an event, severity entry or reference is named only if that item is on both sides. If
-  the item's own value also changed, its own finding is reported and the dropped key is not named.
+- A key dropped from an event, severity entry or reference is named only if the same item is on both sides,
+  meaning the same event value, severity type or URL. If that identifying value also changed, the item's own
+  finding is reported and the dropped key is not named.
+- A custom field name long enough to make the report larger than Node can hold as one string stops the run
+  with an internal error (exit 70). It never gives a pass.
 - The comparison treats every JSON array as unordered, which is right for advisories but would be
   wrong for order-sensitive data in custom extension fields.
 - Matching of unmatched `affected` entries (the rename heuristic) and of their version ranges is bounded

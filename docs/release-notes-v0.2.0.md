@@ -12,7 +12,8 @@ Anyone who prints reports for advisories they did not write, or relies on a clea
 
 - Removing a key the comparers did not read, inside an event, severity or reference object that both files have, gave no finding and exit 0. It now needs review.
 - A run that hits a matching limit now needs review through a `pairing-limit` finding, because the comparison is incomplete. Allowing the removed and added codes is no longer enough to pass.
-- Reordering an array could change a finding's code and, with an allow list, the exit code. Array order no longer decides a result.
+- Reordering an array could change a finding's code and, in some shapes, the exit code. Array order no longer decides a result.
+- Removing a reference entry while another entry keeps its URL was only informational. It now needs review.
 
 **Terminal output**
 
@@ -40,6 +41,8 @@ Anyone who prints reports for advisories they did not write, or relies on a clea
 | `--allow range-event-changed` no longer covers several values of one kind changing in a range. They are reported as removed and added. | Scripts with an allow list |
 | `pairing-limit` needs review. A run that hit a limit exits 1 unless `--allow pairing-limit` is given. | Scripts with an allow list, very large files |
 | Removing a key the comparers did not read now exits 1 instead of 0. | Records with extra keys |
+| Removing a reference entry while another entry keeps its URL now exits 1 instead of 0. | Records listing one URL under several types |
+| `range-bound-converted` applies only when both sides have the same number of values. Otherwise the events are reported as removed and added. | Scripts with an allow list |
 | On `range-bound-converted`, `before` and `after` are strings for one value and arrays for several. | JSON consumers |
 | `--json` bytes now use `\uXXXX` for unsafe characters. Parsed values are unchanged. | Anyone comparing raw bytes |
 | ZWJ, ZWNJ, soft hyphens and variation selectors show as escapes in reports, including legitimate Persian text and joined emoji. Only the display changes. | Readers of those scripts |
@@ -53,7 +56,8 @@ Anyone who prints reports for advisories they did not write, or relies on a clea
 Also:
 
 - The tool does not compare versions or walk commit history, so a conversion finding cannot say whether any release changes status.
-- If an item's own value also changes, its own finding is reported and a key dropped from it is not named.
+- If the value that identifies an item changes (an event value, severity type or URL), the item's own finding is reported and a key dropped from it is not named.
+- A custom field name long enough to make the report larger than Node can hold as one string stops the run with an internal error (exit 70). It never gives a pass.
 - A value that literally contains the text `\u200b` can look the same as the real character in text output. JSON output tells them apart.
 - Lookalike letters from other alphabets are not detected.
 - Tests check output bytes, not how any terminal draws them.

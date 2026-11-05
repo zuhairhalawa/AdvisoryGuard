@@ -178,7 +178,18 @@ export function diffReferences(before: JsonValue | undefined, after: JsonValue |
       });
     } else {
       const aList = [...at].sort();
-      if (aList.join(",") !== types.join(",")) {
+      const lost = types.filter((t) => !at.has(t));
+      if (lost.length > 0 && aList.every((t) => types.includes(t))) {
+        // Entries went away and nothing replaced them, so this is a removal even though the URL stays.
+        out.push({
+          code: "reference-removed",
+          level: "review",
+          path: "references",
+          message: `Reference removed (${lost.join("/")}): ${shorten(firstUrl(bUrls, k), 160)}. The same URL is still listed as ${aList.join("/")}.`,
+          why: "References document the advisory's sources and fixes. Deleting one loses provenance; check it was not dropped as a side effect of another edit.",
+          before: firstUrl(bUrls, k),
+        });
+      } else if (aList.join(",") !== types.join(",")) {
         out.push({
           code: "reference-type-changed",
           level: "info",

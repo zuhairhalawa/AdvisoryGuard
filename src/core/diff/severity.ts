@@ -64,7 +64,9 @@ export function diffSeverity(
     (a) => `${a.type}|${a.key}`,
     (b, a) => (b.type === a.type ? 0 : -1),
   );
-  if (skipped) {
+  // Only entries of one type can pair, so without a shared type nothing was lost to the limit.
+  const typesAfter = new Set(restA.map((ai) => as[ai]?.type));
+  if (skipped && restB.some((bi) => typesAfter.has(bs[bi]?.type))) {
     out.push({
       code: "pairing-limit",
       level: "review",

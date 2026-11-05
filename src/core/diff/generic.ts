@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { PAIRING_LIMIT_WHY, pairItems } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asObjectArray, canonical, getOwn, hasOwn, isObject, isString, shorten } from "../util.js";
@@ -89,7 +90,8 @@ export function diffGeneric(
       return -1;
     };
     const { pairs, restB, restA, skipped } = pairItems(before, after, canonical, canonical, score);
-    if (skipped) {
+    // Only objects can pair, so a list without them on both sides did not lose anything to the limit.
+    if (skipped && restB.some((i) => isObject(before[i])) && restA.some((i) => isObject(after[i]))) {
       out.push({
         code: "pairing-limit",
         level: "review",
@@ -138,6 +140,12 @@ export function diffGeneric(
   });
 }
 
+/** An identity short enough to repeat in every path and message, which stays distinct from other long ones. */
+function pathLabel(id: string): string {
+  if (id.length <= 120) return id;
+  return `${shorten(id, 100)} #${createHash("sha256").update(id).digest("hex").slice(0, 12)}`;
+}
+
 /** A group key that no real identity can equal, because an identity can be any string, including an empty one. */
 const NO_IDENTITY = Symbol("no identity");
 
@@ -174,7 +182,7 @@ export function diffOtherKeys(
     const xs = inBefore.get(id);
     const ys = inAfter.get(id);
     if (id !== NO_IDENTITY && (!xs || !ys)) continue;
-    const where = typeof id === "string" ? `${path}[${id}]` : path;
+    const where = typeof id === "string" ? `${path}[${pathLabel(id)}]` : path;
     const [x] = xs ?? [];
     const [y] = ys ?? [];
     if (x && y && xs?.length === 1 && ys?.length === 1) {
