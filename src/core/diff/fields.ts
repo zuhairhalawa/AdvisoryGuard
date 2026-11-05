@@ -1,6 +1,7 @@
 import { setMinus } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asArray, asObjectArray, getOwn, isObject, isString, shorten } from "../util.js";
+import { diffOtherKeys } from "./generic.js";
 
 const AUTHORITY_PREFIX = "/".repeat(2);
 
@@ -148,14 +149,18 @@ export function diffReferences(before: JsonValue | undefined, after: JsonValue |
   const as = toRefs(after);
   const bTypes = new Map<string, Set<string>>();
   const aTypes = new Map<string, Set<string>>();
-  const add = (m: Map<string, Set<string>>, r: Ref): void => {
-    const s = m.get(r.key) ?? new Set<string>();
+  // Looked up once per reference, so a search through the list here would make long lists quadratic.
+  const bUrls = new Map<string, string>();
+  const aUrls = new Map<string, string>();
+  const add = (types: Map<string, Set<string>>, urls: Map<string, string>, r: Ref): void => {
+    const s = types.get(r.key) ?? new Set<string>();
     s.add(r.type);
-    m.set(r.key, s);
+    types.set(r.key, s);
+    if (!urls.has(r.key)) urls.set(r.key, r.url);
   };
-  bs.forEach((r) => add(bTypes, r));
-  as.forEach((r) => add(aTypes, r));
-  const firstUrl = (list: Ref[], key: string): string => list.find((r) => r.key === key)?.url ?? key;
+  bs.forEach((r) => add(bTypes, bUrls, r));
+  as.forEach((r) => add(aTypes, aUrls, r));
+  const firstUrl = (urls: Map<string, string>, key: string): string => urls.get(key) ?? key;
 
   const keysB = [...bTypes.keys()].sort();
   const keysA = [...aTypes.keys()].sort();
@@ -167,18 +172,29 @@ export function diffReferences(before: JsonValue | undefined, after: JsonValue |
         code: "reference-removed",
         level: "review",
         path: "references",
-        message: `Reference removed (${types.join("/")}): ${shorten(firstUrl(bs, k), 160)}`,
+        message: `Reference removed (${types.join("/")}): ${shorten(firstUrl(bUrls, k), 160)}`,
         why: "References document the advisory's sources and fixes. Deleting one loses provenance; check it was not dropped as a side effect of another edit.",
-        before: firstUrl(bs, k),
+        before: firstUrl(bUrls, k),
       });
     } else {
       const aList = [...at].sort();
-      if (aList.join(",") !== types.join(",")) {
+      const lost = types.filter((t) => !at.has(t));
+      if (lost.length > 0 && aList.every((t) => types.includes(t))) {
+        // Entries went away and nothing replaced them, so this is a removal even though the URL stays.
+        out.push({
+          code: "reference-removed",
+          level: "review",
+          path: "references",
+          message: `Reference removed (${lost.join("/")}): ${shorten(firstUrl(bUrls, k), 160)}. The same URL is still listed as ${aList.join("/")}.`,
+          why: "References document the advisory's sources and fixes. Deleting one loses provenance; check it was not dropped as a side effect of another edit.",
+          before: firstUrl(bUrls, k),
+        });
+      } else if (aList.join(",") !== types.join(",")) {
         out.push({
           code: "reference-type-changed",
           level: "info",
           path: "references",
-          message: `Reference type changed ${types.join("/")} -> ${aList.join("/")}: ${shorten(firstUrl(as, k), 160)}`,
+          message: `Reference type changed ${types.join("/")} -> ${aList.join("/")}: ${shorten(firstUrl(aUrls, k), 160)}`,
         });
       }
     }
@@ -189,11 +205,16 @@ export function diffReferences(before: JsonValue | undefined, after: JsonValue |
         code: "reference-added",
         level: "info",
         path: "references",
-        message: `Reference added (${[...(aTypes.get(k) ?? [])].sort().join("/")}): ${shorten(firstUrl(as, k), 160)}`,
-        after: firstUrl(as, k),
+        message: `Reference added (${[...(aTypes.get(k) ?? [])].sort().join("/")}): ${shorten(firstUrl(aUrls, k), 160)}`,
+        after: firstUrl(aUrls, k),
       });
     }
   }
+  const urlKey = (o: JsonObject): string | undefined => {
+    const url = str(getOwn(o, "url"));
+    return url === undefined ? undefined : normalizeUrl(url);
+  };
+  diffOtherKeys(before, after, ["url", "type"], urlKey, "references", out);
 }
 
 function strings(v: JsonValue | undefined): string[] {

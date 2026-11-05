@@ -1,8 +1,9 @@
 import { canonicalCvss, cvss3BaseScore, cvss3Rating, diffCvssMetrics, parseCvss } from "../cvss.js";
 import type { ParsedCvss } from "../cvss.js";
-import { pairItems } from "../pairing.js";
-import type { Finding, JsonValue } from "../types.js";
+import { PAIRING_LIMIT_WHY, pairItems } from "../pairing.js";
+import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asObjectArray, getOwn, isString, shorten } from "../util.js";
+import { diffOtherKeys } from "./generic.js";
 
 interface SevEntry {
   type: string;
@@ -56,13 +57,24 @@ export function diffSeverity(
 ): void {
   const bs = toEntries(before);
   const as = toEntries(after);
-  const { pairs, restB, restA } = pairItems(
+  const { pairs, restB, restA, skipped } = pairItems(
     bs,
     as,
     (b) => `${b.type}|${b.key}`,
     (a) => `${a.type}|${a.key}`,
     (b, a) => (b.type === a.type ? 0 : -1),
   );
+  // Only entries of one type can pair, so without a shared type nothing was lost to the limit.
+  const typesAfter = new Set(restA.map((ai) => as[ai]?.type));
+  if (skipped && restB.some((bi) => typesAfter.has(bs[bi]?.type))) {
+    out.push({
+      code: "pairing-limit",
+      level: "review",
+      path: basePath,
+      message: `Too many items in ${basePath} to match them up; changed items may be reported as removed and added.`,
+      why: PAIRING_LIMIT_WHY,
+    });
+  }
 
   for (const { bi, ai, exact } of pairs) {
     if (exact) continue;
@@ -112,4 +124,10 @@ export function diffSeverity(
       after: shorten(a.score, 200),
     });
   }
+
+  const typeOf = (o: JsonObject): string | undefined => {
+    const t = getOwn(o, "type");
+    return isString(t) ? t : undefined;
+  };
+  diffOtherKeys(before, after, ["type", "score"], typeOf, basePath, out);
 }

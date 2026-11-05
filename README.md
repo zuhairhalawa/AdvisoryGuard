@@ -15,7 +15,7 @@ you exactly what disappeared, what changed, and why it deserves a second look.
 - Validates against the **official OpenSSF OSV JSON schema** (vendored, pinned and hash-checked).
 - Pure Node.js (>= 20, no native code), one runtime dependency (`ajv`).
 
-> **Status:** v0.1.0 is available on npm! Install with `npm install -g advisoryguard` or run it directly with `npx advisoryguard --version`.
+> **Status:** available on npm. Install with `npm install -g advisoryguard` or run it directly with `npx advisoryguard --version`.
 
 <p align="center">
   <img src="docs/assets/advisoryguard-cvss-removal-demo.gif" alt="Terminal recording: advisoryguard diff compares test/fixtures/regression-before.json with regression-after-bug.json. It reports two REVIEW findings, severity-removed for CVSS_V3 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H, base score 9.8, Critical) and for CVSS_V4, plus a package-renamed finding for @acme/parsr to @acme/parser, and finishes with REVIEW REQUIRED (3 changes need review, 1 informational) and exit code 1." width="880">
@@ -116,7 +116,7 @@ REVIEW REQUIRED (1 change needs review, 1 informational)
 
 Requires Node.js 20 or newer.
 
-From npm (published as [`advisoryguard@0.1.0`](https://www.npmjs.com/package/advisoryguard)):
+From npm ([`advisoryguard`](https://www.npmjs.com/package/advisoryguard)):
 
 ```sh
 npm install --global advisoryguard
@@ -132,8 +132,8 @@ git clone https://github.com/zuhairhalawa/AdvisoryGuard.git
 cd AdvisoryGuard
 npm ci
 npm run build
-npm pack                       # creates advisoryguard-0.1.0.tgz
-npm install --global ./advisoryguard-0.1.0.tgz
+npm pack                       # creates advisoryguard-0.2.0.tgz
+npm install --global ./advisoryguard-0.2.0.tgz
 ```
 
 ## Usage
@@ -201,19 +201,21 @@ references, scheme-less URLs, non-semver versions in a SEMVER range, ...). JSON 
 `format` keywords (`uri`, `date-time`) are treated as annotations, as in the specification's default
 mode, so a genuine GitHub record with a scheme-less reference URL is valid with a warning.
 
-**diff** - semantic comparison, independent of key order, array order and formatting:
+**diff** - semantic comparison, independent of key order, array order and formatting. Reordering an array can
+change only how a result is displayed: the order of findings and values, which spelling of a URL is shown, and
+the indexes in paths:
 
 | Area | Behavior |
 | --- | --- |
 | `severity[]` (also `affected[].severity`) | Matched by type, so CVSS v3 and v4 (and several entries) stay distinct. Removed = review, changed = review (with metric delta and v3 base score), added = info. |
 | `affected[]` | Matched by ecosystem+name; a lone unmatched package in the same ecosystem is treated as a **rename** so its ranges/severity are still compared. Removed/added packages = review. |
-| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. a removed `fixed` leaves the range open-ended). Explicit `versions[]` additions/removals = review. |
+| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. removing the only `fixed` leaves the range open-ended). Replacing `last_affected` with `fixed` (or the reverse) in a range, with the same number of values on both sides, = one review finding (`range-bound-converted`), because `last_affected` is an inclusive end and `fixed` an exclusive one, so affected status may change and needs checking against the package's release history (the repository's history for a GIT range). Several values of one kind in a range are listed without being paired. Explicit `versions[]` additions/removals = review. |
 | references, aliases, related, upstream | Removal = review (lost provenance / cross-references); addition = info. URLs compared ignoring trailing slash and host case. |
 | CWE (`database_specific.cwe_ids`), GitHub severity label | Removal/change = review; addition = info. |
-| `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). |
+| `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). Two exceptions = info: setting a missing `published`, and changing the date of an existing `withdrawn`. |
 | `modified` | Updated = **info** (expected). Moving backwards or deleting = review. |
 | `summary` / `details` | Wording edits = info. Emptied = review. `details` shrinking below half of its length (if >= 200 chars) = review (heuristic). |
-| Everything else | Generic structural diff: a removed field/list item is **never silent** (review); additions and most value changes are info; changed values of fields whose name contains severity/cwe/cve/fix/patch/affect/version/range/score are review. |
+| Everything else | Generic structural diff: a removed field/list item is **never silent** (review); additions and most value changes are info; changed values of fields whose name contains severity/cwe/cve/fix/patch/affect/version/range/score are review. Other keys inside event, severity and reference objects are compared the same way, matched by event value, severity type or URL. |
 
 A change is never declared "wrong" - `review` means "a human should confirm this was intended",
 and every such finding says why.
@@ -238,11 +240,32 @@ and every such finding says why.
 - Rename detection is heuristic: when exactly one unmatched affected entry per ecosystem remains
   on each side it is treated as the same entry. A genuine "replace package A with unrelated package B"
   edit looks the same and is still reported as review.
+- A key dropped from an event, severity entry or reference is named only if the same item is on both sides,
+  meaning the same event value, severity type or URL. If that identifying value also changed, the item's own
+  finding is reported and the dropped key is not named.
+- A package or custom field name long enough to make the report larger than Node can hold as one string stops
+  the run with an internal error (exit 70). It never gives a pass.
+- When changed ranges share no value, the tool cannot know which became which, so a report can pair them
+  differently from the edit you made. Every changed value is still reported, though the text report can shorten
+  long lists.
 - The comparison treats every JSON array as unordered, which is right for advisories but would be
   wrong for order-sensitive data in custom extension fields.
-- Matching of unmatched `affected` entries (the rename heuristic) is bounded to 250,000 candidate
-  comparisons so that a huge crafted file cannot make the tool hang. Beyond that limit the entries are
-  reported as removed/added (still "needs review") together with a `pairing-limit` notice.
+- Matching of unmatched `affected` entries (the rename heuristic) and of their version ranges is bounded
+  to 250,000 candidate comparisons per list (per ecosystem in the rename step) and 20 million units of
+  scoring work per comparison. A unit is one scored pair plus the size of the pair's smaller token set.
+  Beyond those limits the entries or ranges are reported as removed/added, together with a `pairing-limit`
+  finding. That finding needs review because the comparison is then incomplete, so allowing the removed and
+  added codes is not enough for a run to pass; allow `pairing-limit` as well to accept it explicitly. Lists
+  of non-objects, such as strings, give no such finding.
+- Those limits cover only that scoring work. They do not cover parsing, validation, exact matching,
+  canonicalization, sorting or the other comparers. Custom list fields, severity lists and the other keys
+  of events, severity entries and references have only the per-list limit. None of this is a run-time
+  guarantee: a crafted custom list of about 1.5 MB took over a minute in one local measurement, and a file
+  near the 25 MB size limit can take far longer.
+- The tool does not compare versions, so a `range-bound-converted` finding cannot say whether any release
+  changes status. Check the package's release history. If a value stays the same on both sides, the finding
+  says that this end now includes or excludes it. Several values of one kind in a range are listed without
+  being paired.
 - It compares two files you provide; it does not fetch advisories or talk to GitHub.
 - A newer OSV schema may allow things this version rejects (for example a new ecosystem); you would
   see an `unknown-ecosystem`-style error until the vendored schema is updated.
@@ -250,10 +273,16 @@ and every such finding says why.
 ## Security notes
 
 Input is parsed with `JSON.parse` only (no `eval`, no code or command execution from advisory
-content), is size-limited (25 MB) and depth-limited, and control characters in advisory text are
-escaped before being printed to a terminal. Files are opened read-only. The shipped source contains
-no network, child-process or dynamic-code APIs, and `npm run verify:pack` runs the installed CLI with
-all network access blocked to confirm it. `npm audit` reports no known vulnerabilities at release time.
+content), and is size-limited (25 MB) and depth-limited. Control characters other than tab, and line-break,
+bidirectional, zero-width and other default-ignorable characters, in advisory text and file names are
+escaped before being printed, in text and JSON output and in usage errors. The JSON parses back to the same
+values. Text that uses these characters legitimately, such as a Persian ZWNJ or a joined emoji, is shown
+with escapes in the report only. A value that literally contains the text `\u200b` can look the same as the
+real character in text output; JSON output tells them apart. Lookalike letters from other alphabets are not
+detected. Tests check the output bytes, not how any terminal draws them. Files are opened read-only. The
+shipped source contains no network, child-process or dynamic-code APIs, and `npm run verify:pack` runs the
+installed CLI with all network access blocked to confirm it. `npm audit` reports no known vulnerabilities at
+release time.
 This is a review aid, not a security boundary: it cannot decide whether an advisory is *correct*.
 
 ## Platforms

@@ -1,4 +1,5 @@
 import type { DiffResult, ValidationResult } from "../core/types.js";
+import { stringifyForTerminal } from "../core/util.js";
 import { VERSION } from "../version.js";
 
 /** Version of the JSON output contract (independent of the package version). */
@@ -24,7 +25,7 @@ export function validateToJson(file: string, result: ValidationResult, exitCode:
     findings: result.findings,
     exitCode,
   };
-  return JSON.stringify(payload, null, 2);
+  return stringifyForTerminal(payload);
 }
 
 export function diffToJson(beforeFile: string, afterFile: string, result: DiffResult, exitCode: number): string {
@@ -46,5 +47,5 @@ export function diffToJson(beforeFile: string, afterFile: string, result: DiffRe
     },
     exitCode,
   };
-  return JSON.stringify(payload, null, 2);
+  return stringifyForTerminal(payload);
 }

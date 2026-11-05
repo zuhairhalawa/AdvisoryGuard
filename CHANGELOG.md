@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.2.0
+
+This release changes finding codes, allow-list coverage and some exit codes. See the
+[release notes](https://github.com/zuhairhalawa/AdvisoryGuard/blob/main/docs/release-notes-v0.2.0.md) for what to
+check.
+
+Terminal output
+
+- Fixed the text sanitizer: its pattern contained literal `?` characters, so every `?` was printed as
+  `\u003f` while bidirectional and zero-width characters passed through unescaped. Line feeds in advisory
+  values are now escaped too, so they can no longer start a new output line. Other default-ignorable characters
+  (such as U+034F, variation selectors and Hangul fillers) are escaped as well.
+- `--json` output now writes the same characters as `\uXXXX` escapes. The parsed values are unchanged; only
+  the bytes differ.
+- Usage errors now escape file names and arguments.
+
+Findings
+
+- New `range-bound-converted` finding for `last_affected` replaced by `fixed` (or the reverse). These edits
+  were reported as separate removed and added events with explanations that could point the wrong way. The
+  finding says affected status may change and asks for a check of the release history, or of the repository for
+  a GIT range. It lists several values in one range without pairing them, and applies only when both sides have
+  the same number of values. The run still requires review, but a `--allow` list naming
+  `range-event-removed,range-event-added` no longer covers this case.
+- Several values of one kind changing in one range are now reported as removed and added, instead of being
+  paired by text order (which could claim that 10.0.0 became 2.0.1). `--allow range-event-changed` no longer
+  covers that case.
+- Keys that the dedicated comparers do not read, inside an event, severity or reference object that both sides
+  have, are now compared like any other field. Removing one needs review; it used to produce no finding and
+  exit 0. This includes a non-string value under an event kind.
+- Removing a reference entry when another entry keeps its URL now needs review (`reference-removed`). It used to
+  be informational, because the URL was still present.
+- Event explanations no longer say "open-ended" while another end remains in the range, "ends earlier" when a
+  new `fixed` closes a new interval, or that versions between two `fixed` values "change status" for certain.
+  Explanations of new `introduced`, `last_affected` and `limit` events now say "may".
+
+Limits
+
+- The scoring work of `affected` entry and range matching is now limited per comparison, and long runs of
+  identical items and long lists of removed references no longer take quadratic time. This is not a limit on
+  total run time.
+- `pairing-limit` findings now also cover range, custom and severity lists over the per-list limit, and their
+  counts match the entries reported separately. Lists of non-objects, such as strings, give no such finding.
+- `pairing-limit` now needs review instead of being informational, because the comparison is incomplete. Allowing
+  the removed and added codes no longer makes such a run pass; `--allow pairing-limit` accepts it explicitly.
+- Array order no longer decides a result. Score ties are broken by content instead of position, and the work
+  budget is spent in content order. Before this, reordering an array could change a finding's code and the exit
+  code.
+
+Invalid input
+
+- An object as a range `type` or `repo`, and very large numbers of schema errors, now exit 2. They used to stop
+  with an internal error (exit 70).
+
+Verification for this release: typecheck, lint and all tests on Ubuntu, macOS and Windows with Node 22 and 24 in
+CI, and on Windows with Node 24 locally; the packed tarball on Node 20 on the same three systems in CI; `npm audit`
+with no known vulnerabilities; and the vendored schema check.
+
 ## 0.1.0
 
 Initial release. Published to npm as `advisoryguard@0.1.0` on 2026-10-26.
