@@ -22,6 +22,9 @@ Findings
 - Several values of one kind changing in one range are now reported as removed and added, instead of being
   paired by text order (which could claim that 10.0.0 became 2.0.1). `--allow range-event-changed` no longer
   covers that case.
+- Keys that the dedicated comparers do not read, inside an event, severity or reference object that both sides
+  have, are now compared like any other field. Removing one needs review; it used to produce no finding and
+  exit 0. This includes a non-string value under an event kind.
 - Event explanations no longer say "open-ended" while another end remains in the range, "ends earlier" when a
   new `fixed` closes a new interval, or that versions between two `fixed` values "change status" for certain.
   Explanations of new `introduced`, `last_affected` and `limit` events now say "may".

@@ -214,7 +214,7 @@ cases where array order matters):
 | `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). |
 | `modified` | Updated = **info** (expected). Moving backwards or deleting = review. |
 | `summary` / `details` | Wording edits = info. Emptied = review. `details` shrinking below half of its length (if >= 200 chars) = review (heuristic). |
-| Everything else | Generic structural diff: a removed field/list item is **never silent** (review); additions and most value changes are info; changed values of fields whose name contains severity/cwe/cve/fix/patch/affect/version/range/score are review. |
+| Everything else | Generic structural diff: a removed field/list item is **never silent** (review); additions and most value changes are info; changed values of fields whose name contains severity/cwe/cve/fix/patch/affect/version/range/score are review. Other keys inside event, severity and reference objects are compared the same way, matched by event value, severity type or URL. |
 
 A change is never declared "wrong" - `review` means "a human should confirm this was intended",
 and every such finding says why.
@@ -242,6 +242,8 @@ and every such finding says why.
 - When items are matched and several score the same (entries, ranges, severity entries, list items), their
   position in the array breaks the tie, so reordering them can change which pairing a report shows. It did
   not change the verdict in any case tried.
+- A key dropped from an event, severity entry or reference is named only if that item is on both sides. If
+  the item's own value also changed, its own finding is reported and the dropped key is not named.
 - The comparison treats every JSON array as unordered, which is right for advisories but would be
   wrong for order-sensitive data in custom extension fields.
 - Matching of unmatched `affected` entries (the rename heuristic) and of their version ranges is bounded
@@ -252,8 +254,8 @@ and every such finding says why.
   them fall back, which can change how many ranges are reported as changed rather than removed and added.
   Such a run still needs review, unless those codes are allowed with `--allow`.
 - Those limits cover only that scoring work. They do not cover parsing, validation, exact matching,
-  canonicalization, sorting or the other comparers. Custom list fields and severity lists have only the
-  per-list limit. None of this is a run-time
+  canonicalization, sorting or the other comparers. Custom list fields, severity lists and the other keys
+  of events, severity entries and references have only the per-list limit. None of this is a run-time
   guarantee: a crafted custom list of about 1.5 MB took over a minute in one local measurement, and a file
   near the 25 MB size limit can take far longer.
 - The tool does not compare versions, so a `range-bound-converted` finding cannot say whether any release

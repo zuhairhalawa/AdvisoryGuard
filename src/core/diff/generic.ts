@@ -1,6 +1,6 @@
 import { pairItems } from "../pairing.js";
-import type { Finding, JsonValue } from "../types.js";
-import { canonical, getOwn, hasOwn, isObject, shorten } from "../util.js";
+import type { Finding, JsonObject, JsonValue } from "../types.js";
+import { asObjectArray, canonical, getOwn, hasOwn, isObject, isString, shorten } from "../util.js";
 
 /** Field names whose modification could plausibly affect who is told they are vulnerable. */
 const SENSITIVE = /(severity|cwe|cve|fix|patch|affect|version|range|vulnerab|exploit|score|cvss)/i;
@@ -135,4 +135,52 @@ export function diffGeneric(
     before: preview(before),
     after: preview(after),
   });
+}
+
+/** A group key that no real identity can equal, because an identity can be any string, including an empty one. */
+const NO_IDENTITY = Symbol("no identity");
+
+/**
+ * For comparers that read only some keys of each list item: compares everything else in the items both
+ * sides have, so that removing a key still needs review. `identity` says which items are the same; an
+ * item only one side has is left to the comparer, which reports it. Items with no identity are compared
+ * as a group, so that nothing is dropped.
+ */
+export function diffOtherKeys(
+  before: JsonValue | undefined,
+  after: JsonValue | undefined,
+  known: readonly string[],
+  identity: (item: JsonObject) => string | undefined,
+  path: string,
+  out: Finding[],
+): void {
+  const group = (v: JsonValue | undefined): Map<string | symbol, JsonObject[]> => {
+    const groups = new Map<string | symbol, JsonObject[]>();
+    for (const item of asObjectArray(v)) {
+      const id = identity(item) ?? NO_IDENTITY;
+      // A known key holding anything but a string is invisible to the comparer, so it counts as other.
+      const rest = Object.fromEntries(Object.entries(item).filter(([k, value]) => !(known.includes(k) && isString(value)))) as JsonObject;
+      const list = groups.get(id);
+      if (list) list.push(rest);
+      else groups.set(id, [rest]);
+    }
+    return groups;
+  };
+  const inBefore = group(before);
+  const inAfter = group(after);
+  const ids = [...new Set([...inBefore.keys(), ...inAfter.keys()])].filter((id) => typeof id === "string").sort();
+  for (const id of [...ids, NO_IDENTITY]) {
+    const xs = inBefore.get(id);
+    const ys = inAfter.get(id);
+    if (id !== NO_IDENTITY && (!xs || !ys)) continue;
+    const where = typeof id === "string" ? `${path}[${id}]` : path;
+    const [x] = xs ?? [];
+    const [y] = ys ?? [];
+    if (x && y && xs?.length === 1 && ys?.length === 1) {
+      diffGeneric(x, y, where, out);
+    } else {
+      const nonEmpty = (list: JsonObject[] | undefined): JsonObject[] => (list ?? []).filter((o) => Object.keys(o).length > 0);
+      diffGeneric(nonEmpty(xs), nonEmpty(ys), where, out);
+    }
+  }
 }

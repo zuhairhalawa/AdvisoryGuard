@@ -1,6 +1,7 @@
 import { setMinus } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asArray, asObjectArray, getOwn, isObject, isString, shorten } from "../util.js";
+import { diffOtherKeys } from "./generic.js";
 
 const AUTHORITY_PREFIX = "/".repeat(2);
 
@@ -198,6 +199,11 @@ export function diffReferences(before: JsonValue | undefined, after: JsonValue |
       });
     }
   }
+  const urlKey = (o: JsonObject): string | undefined => {
+    const url = str(getOwn(o, "url"));
+    return url === undefined ? undefined : normalizeUrl(url);
+  };
+  diffOtherKeys(before, after, ["url", "type"], urlKey, "references", out);
 }
 
 function strings(v: JsonValue | undefined): string[] {

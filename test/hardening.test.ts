@@ -626,6 +626,177 @@ describe("usage errors", () => {
   });
 });
 
+describe("keys the dedicated comparers do not read", () => {
+  const score = "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N";
+  const url = "https://example.test/advisory";
+  const other = "https://example.test/other";
+
+  function expectBothValid(before: JsonObject, after: JsonObject): void {
+    expect(validateText(JSON.stringify(before)).valid).toBe(true);
+    expect(validateText(JSON.stringify(after)).valid).toBe(true);
+  }
+
+  it("reports a key removed from an event object, and names the event", () => {
+    const before = doc([{ introduced: "0", note: "x" }, { fixed: "1.0.0" }]);
+    const after = doc([{ introduced: "0" }, { fixed: "1.0.0" }]);
+    expectBothValid(before, after);
+    const r = diff(before, after);
+    expect(r.status).toBe("review");
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+    expect(r.findings[0]?.path).toBe("affected[npm/@acme/parser].ranges.events[introduced:0].note");
+    expect(cliDiff(before, after).code).toBe(1);
+  });
+
+  it("reports a non-string value under an event kind, which the event comparer cannot read", () => {
+    const before = doc([{ introduced: "0", fixed: 1 } as unknown as JsonObject, { fixed: "1.0.0" }]);
+    const after = doc([{ introduced: "0" }, { fixed: "1.0.0" }]);
+    expectBothValid(before, after);
+    const r = diff(before, after);
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+    expect(r.findings[0]?.path).toBe("affected[npm/@acme/parser].ranges.events[introduced:0].fixed");
+  });
+
+  it("reports a key removed from a top-level severity entry", () => {
+    const before = doc(FIXED, { severity: [{ type: "CVSS_V3", score, note: "x" }] });
+    const after = doc(FIXED, { severity: [{ type: "CVSS_V3", score }] });
+    expectBothValid(before, after);
+    const r = diff(before, after);
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+    expect(r.findings[0]?.path).toBe("severity[CVSS_V3].note");
+  });
+
+  it("reports a key removed from an affected severity entry", () => {
+    const withSeverity = (entry: JsonObject): JsonObject =>
+      doc(FIXED, { affected: [{ package: { ecosystem: "npm", name: "p" }, severity: [entry], versions: ["1"] }] });
+    const r = diff(withSeverity({ type: "CVSS_V3", score, note: "x" }), withSeverity({ type: "CVSS_V3", score }));
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+    expect(r.findings[0]?.path).toBe("affected[npm/p].severity[CVSS_V3].note");
+  });
+
+  it("reports a key removed from a reference, and names the reference", () => {
+    const before = doc(FIXED, { references: [{ type: "WEB", url: other }, { type: "WEB", url, note: "x" }] });
+    const after = doc(FIXED, { references: [{ type: "WEB", url: other }, { type: "WEB", url }] });
+    expectBothValid(before, after);
+    const r = diff(before, after);
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+    expect(r.findings[0]?.path).toBe(`references[${url}].note`);
+  });
+
+  it("adds no finding when the comparer already reports the whole item", () => {
+    const refs = diff(
+      doc(FIXED, { references: [{ type: "WEB", url, note: "x" }, { type: "WEB", url: other }] }),
+      doc(FIXED, { references: [{ type: "WEB", url: other }] }),
+    );
+    expect(codes(refs)).toEqual(["reference-removed"]);
+    expect(
+      diff(
+        doc(FIXED, { references: [{ type: "WEB", url, note: "x" }, { type: "WEB", url: other }] }),
+        doc(FIXED, { references: [{ type: "WEB", url: other }] }),
+        ["reference-removed"],
+      ).status,
+    ).toBe("clean");
+    const severity = diff(doc(FIXED, { severity: [{ type: "CVSS_V3", score, note: "x" }] }), doc(FIXED, { severity: [] }));
+    expect(codes(severity)).toEqual(["severity-removed"]);
+    const events = diff(
+      doc([{ introduced: "0" }, { fixed: "1.0.0", note: "x" }]),
+      doc([{ introduced: "0" }, { fixed: "2.0.0", note: "x" }]),
+    );
+    expect(codes(events)).toEqual(["range-event-changed"]);
+  });
+
+  it("reports a key that moved to another item", () => {
+    const r = diff(
+      doc(FIXED, { references: [{ type: "WEB", url, note: "x" }, { type: "WEB", url: other }] }),
+      doc(FIXED, { references: [{ type: "WEB", url }, { type: "WEB", url: other, note: "x" }] }),
+    );
+    expect(r.status).toBe("review");
+    expect(r.findings.map((f) => [f.code, f.path])).toEqual([
+      ["field-removed", `references[${url}].note`],
+      ["field-added", `references[${other}].note`],
+    ]);
+  });
+
+  it("treats a changed or new key like any other field, by its name", () => {
+    const withKey = (key: string, value: string): JsonObject =>
+      doc([{ introduced: "0", [key]: value } as JsonObject, { fixed: "1.0.0" }]);
+    const changed = diff(withKey("note", "a"), withKey("note", "b"));
+    expect(codes(changed)).toEqual(["field-changed"]);
+    expect(changed.status).toBe("clean");
+    const added = diff(doc([{ introduced: "0" }, { fixed: "1.0.0" }]), withKey("note", "a"));
+    expect(codes(added)).toEqual(["field-added"]);
+    expect(added.status).toBe("clean");
+    expect(diff(withKey("fix_note", "a"), withKey("fix_note", "b")).status).toBe("review");
+  });
+
+  it("compares items with the same identity as an unordered list", () => {
+    const r = diff(
+      doc(FIXED, { references: [{ type: "WEB", url, note: "a" }, { type: "WEB", url, note: "b" }] }),
+      doc(FIXED, { references: [{ type: "WEB", url, note: "b" }] }),
+    );
+    expect(reviewCodes(r)).toEqual(["list-item-removed"]);
+    expect(r.findings[0]?.path).toBe(`references[${url}]`);
+  });
+
+  it("treats URLs that normalize to the same value as the same reference", () => {
+    const r = diff(
+      doc(FIXED, { references: [{ type: "WEB", url: "https://example.test/a/", note: "x" }] }),
+      doc(FIXED, { references: [{ type: "WEB", url: "https://example.test/a" }] }),
+    );
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+  });
+
+  it("compares as a list when the number of items with one identity changes", () => {
+    const r = diff(
+      doc(FIXED, { references: [{ type: "WEB", url, note: "a" }] }),
+      doc(FIXED, { references: [{ type: "WEB", url, note: "a" }, { type: "WEB", url, note: "b" }] }),
+    );
+    expect(codes(r)).toEqual(["list-item-added"]);
+    expect(r.status).toBe("clean");
+  });
+
+  it("reports other keys in the same order whatever order the items are in", () => {
+    const refs = (order: string[], note: boolean): JsonObject[] =>
+      order.map((u) => ({ type: "WEB", url: u, ...(note ? { note: "x" } : {}) }));
+    const paths = (r: { findings: Finding[] }): (string | undefined)[] => r.findings.map((f) => f.path);
+    const forward = diff(doc(FIXED, { references: refs([url, other], true) }), doc(FIXED, { references: refs([url, other], false) }));
+    const backward = diff(doc(FIXED, { references: refs([other, url], true) }), doc(FIXED, { references: refs([other, url], false) }));
+    expect(paths(forward)).toEqual([`references[${url}].note`, `references[${other}].note`]);
+    expect(paths(backward)).toEqual(paths(forward));
+  });
+
+  it("does not treat an empty URL as having no identity", () => {
+    const out: Finding[] = [];
+    diffReferences([{ type: "WEB", url: "", note: "x" }], [], out);
+    expect(out.map((f) => f.code)).toEqual(["reference-removed"]);
+  });
+
+  it("does not lose keys on a reference with no URL, and gives them the plain path", () => {
+    const out: Finding[] = [];
+    diffReferences([{ type: "WEB", note: "x" }], [], out);
+    expect(out.map((f) => [f.code, f.path])).toEqual([["list-item-removed", "references"]]);
+  });
+
+  it("keeps long URLs that share a beginning apart in the path", () => {
+    const long = (end: string): string => `https://example.test/${"a".repeat(200)}${end}`;
+    const refs = (note: boolean): JsonObject[] =>
+      ["1", "2"].map((end) => ({ type: "WEB", url: long(end), ...(note ? { note: "x" } : {}) }));
+    const r = diff(doc(FIXED, { references: refs(true) }), doc(FIXED, { references: refs(false) }));
+    expect(new Set(r.findings.map((f) => f.path)).size).toBe(2);
+  });
+
+  it("does not lose keys on an item with no identity", () => {
+    const out: Finding[] = [];
+    diffSeverity([{ note: "x" }], [], "severity", "", out);
+    expect(out.filter((f) => f.level === "review").map((f) => f.code)).toEqual(["severity-removed", "list-item-removed"]);
+  });
+
+  it("reports nothing when those keys are unchanged, whatever the order", () => {
+    const before = doc([{ introduced: "0", note: "x" }, { fixed: "1.0.0", other: "y" }]);
+    const after = doc([{ fixed: "1.0.0", other: "y" }, { note: "x", introduced: "0" }]);
+    expect(diff(before, after).findings).toEqual([]);
+  });
+});
+
 describe("reference spelling in findings", () => {
   const spelledA = "https://Example.test/a/";
   const spelledB = "https://example.test/a";

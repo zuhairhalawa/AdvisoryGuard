@@ -2,7 +2,7 @@ import { MAX_MATCHING_WORK, overlap, pairItems, setMinus } from "../pairing.js";
 import type { WorkBudget } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asArray, asObjectArray, canonical, clone, getOwn, isObject, isString, shorten } from "../util.js";
-import { diffGeneric } from "./generic.js";
+import { diffGeneric, diffOtherKeys } from "./generic.js";
 import { diffSeverity } from "./severity.js";
 
 const EVENT_KINDS = ["introduced", "fixed", "last_affected", "limit"] as const;
@@ -273,6 +273,12 @@ function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, o
       return c;
     };
     diffGeneric(rest(rb), rest(ra), `${path}.ranges`, out);
+    const eventId = (e: JsonObject): string | undefined =>
+      EVENT_KINDS.flatMap((k) => {
+        const v = getOwn(e, k);
+        return isString(v) ? [`${k}:${v}`] : [];
+      }).join(",") || undefined;
+    diffOtherKeys(getOwn(rb, "events"), getOwn(ra, "events"), EVENT_KINDS, eventId, `${path}.ranges.events`, out);
   }
 
   for (const bi of restB) {

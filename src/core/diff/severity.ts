@@ -1,8 +1,9 @@
 import { canonicalCvss, cvss3BaseScore, cvss3Rating, diffCvssMetrics, parseCvss } from "../cvss.js";
 import type { ParsedCvss } from "../cvss.js";
 import { pairItems } from "../pairing.js";
-import type { Finding, JsonValue } from "../types.js";
+import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asObjectArray, getOwn, isString, shorten } from "../util.js";
+import { diffOtherKeys } from "./generic.js";
 
 interface SevEntry {
   type: string;
@@ -120,4 +121,10 @@ export function diffSeverity(
       after: shorten(a.score, 200),
     });
   }
+
+  const typeOf = (o: JsonObject): string | undefined => {
+    const t = getOwn(o, "type");
+    return isString(t) ? t : undefined;
+  };
+  diffOtherKeys(before, after, ["type", "score"], typeOf, basePath, out);
 }
