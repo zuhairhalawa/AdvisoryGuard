@@ -202,13 +202,14 @@ references, scheme-less URLs, non-semver versions in a SEMVER range, ...). JSON 
 mode, so a genuine GitHub record with a scheme-less reference URL is valid with a warning.
 
 **diff** - semantic comparison, independent of key order, array order and formatting. Reordering an array can
-change only the order findings and values are shown in, and the indexes in custom-list paths:
+change only how a result is displayed: the order of findings and values, which spelling of a URL is shown, and
+the indexes in paths:
 
 | Area | Behavior |
 | --- | --- |
 | `severity[]` (also `affected[].severity`) | Matched by type, so CVSS v3 and v4 (and several entries) stay distinct. Removed = review, changed = review (with metric delta and v3 base score), added = info. |
 | `affected[]` | Matched by ecosystem+name; a lone unmatched package in the same ecosystem is treated as a **rename** so its ranges/severity are still compared. Removed/added packages = review. |
-| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. removing the only `fixed` leaves the range open-ended). Replacing `last_affected` with `fixed` (or the reverse) in a range = one review finding (`range-bound-converted`), because `last_affected` is an inclusive end and `fixed` an exclusive one, so affected status may change and needs checking against the package's release history (the repository's history for a GIT range). Several values of one kind in a range are listed without being paired. Explicit `versions[]` additions/removals = review. |
+| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. removing the only `fixed` leaves the range open-ended). Replacing `last_affected` with `fixed` (or the reverse) in a range, with the same number of values on both sides, = one review finding (`range-bound-converted`), because `last_affected` is an inclusive end and `fixed` an exclusive one, so affected status may change and needs checking against the package's release history (the repository's history for a GIT range). Several values of one kind in a range are listed without being paired. Explicit `versions[]` additions/removals = review. |
 | references, aliases, related, upstream | Removal = review (lost provenance / cross-references); addition = info. URLs compared ignoring trailing slash and host case. |
 | CWE (`database_specific.cwe_ids`), GitHub severity label | Removal/change = review; addition = info. |
 | `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). Two exceptions = info: setting a missing `published`, and changing the date of an existing `withdrawn`. |
@@ -242,8 +243,10 @@ and every such finding says why.
 - A key dropped from an event, severity entry or reference is named only if the same item is on both sides,
   meaning the same event value, severity type or URL. If that identifying value also changed, the item's own
   finding is reported and the dropped key is not named.
-- A custom field name long enough to make the report larger than Node can hold as one string stops the run
-  with an internal error (exit 70). It never gives a pass.
+- A package or custom field name long enough to make the report larger than Node can hold as one string stops
+  the run with an internal error (exit 70). It never gives a pass.
+- When changed ranges share no value, the tool cannot know which became which, so a report can pair them
+  differently from the edit you made. Every changed value is still listed.
 - The comparison treats every JSON array as unordered, which is right for advisories but would be
   wrong for order-sensitive data in custom extension fields.
 - Matching of unmatched `affected` entries (the rename heuristic) and of their version ranges is bounded
@@ -251,7 +254,8 @@ and every such finding says why.
   scoring work per comparison. A unit is one scored pair plus the size of the pair's smaller token set.
   Beyond those limits the entries or ranges are reported as removed/added, together with a `pairing-limit`
   finding. That finding needs review because the comparison is then incomplete, so allowing the removed and
-  added codes is not enough for a run to pass; `--allow pairing-limit` accepts it explicitly.
+  added codes is not enough for a run to pass; allow `pairing-limit` as well to accept it explicitly. Lists
+  whose items can never pair, such as lists of strings, give no such finding.
 - Those limits cover only that scoring work. They do not cover parsing, validation, exact matching,
   canonicalization, sorting or the other comparers. Custom list fields, severity lists and the other keys
   of events, severity entries and references have only the per-list limit. None of this is a run-time

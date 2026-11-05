@@ -46,7 +46,7 @@ function genericRemainder(doc: JsonObject): JsonValue {
 /**
  * Semantically compare two parsed advisories. Pure and deterministic: the inputs are
  * never mutated, and key order, array order and whitespace never decide a result. Array
- * order only affects the order findings are listed in and the indexes in custom-list paths.
+ * order only affects display: the order of findings and values, URL spelling and path indexes.
  */
 export function diffAdvisories(before: JsonObject, after: JsonObject): Finding[] {
   const out: Finding[] = [];
