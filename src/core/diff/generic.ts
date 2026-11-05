@@ -88,7 +88,15 @@ export function diffGeneric(
       }
       return -1;
     };
-    const { pairs, restB, restA } = pairItems(before, after, canonical, canonical, score);
+    const { pairs, restB, restA, skipped } = pairItems(before, after, canonical, canonical, score);
+    if (skipped) {
+      out.push({
+        code: "pairing-limit",
+        level: "info",
+        path,
+        message: `Too many items in ${path} to match them up; changed items may be reported as removed and added.`,
+      });
+    }
     for (const { bi, ai, exact } of pairs) {
       if (exact) continue;
       diffGeneric(before[bi], after[ai], `${path}[${bi}]`, out);

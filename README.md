@@ -201,7 +201,8 @@ references, scheme-less URLs, non-semver versions in a SEMVER range, ...). JSON 
 `format` keywords (`uri`, `date-time`) are treated as annotations, as in the specification's default
 mode, so a genuine GitHub record with a scheme-less reference URL is valid with a warning.
 
-**diff** - semantic comparison, independent of key order, array order and formatting:
+**diff** - semantic comparison, independent of key order, array order and formatting (Limitations names the
+cases where array order matters):
 
 | Area | Behavior |
 | --- | --- |
@@ -238,11 +239,23 @@ and every such finding says why.
 - Rename detection is heuristic: when exactly one unmatched affected entry per ecosystem remains
   on each side it is treated as the same entry. A genuine "replace package A with unrelated package B"
   edit looks the same and is still reported as review.
+- When items are matched and several score the same (entries, ranges, severity entries, list items), their
+  position in the array breaks the tie, so reordering them can change which pairing a report shows. It did
+  not change the verdict in any case tried.
 - The comparison treats every JSON array as unordered, which is right for advisories but would be
   wrong for order-sensitive data in custom extension fields.
-- Matching of unmatched `affected` entries (the rename heuristic) is bounded to 250,000 candidate
-  comparisons so that a huge crafted file cannot make the tool hang. Beyond that limit the entries are
-  reported as removed/added (still "needs review") together with a `pairing-limit` notice.
+- Matching of unmatched `affected` entries (the rename heuristic) and of their version ranges is bounded
+  to 250,000 candidate comparisons per list (per ecosystem in the rename step) and 20 million units of
+  scoring work per comparison. A unit is one scored pair plus the size of the pair's smaller token set.
+  Beyond those limits the entries or ranges are reported as removed/added (still "needs review") together
+  with a `pairing-limit` notice. Past the work limit, the order of the `affected` entries decides which of
+  them fall back, which can change how many ranges are reported as changed rather than removed and added.
+  Such a run still needs review, unless those codes are allowed with `--allow`.
+- Those limits cover only that scoring work. They do not cover parsing, validation, exact matching,
+  canonicalization, sorting or the other comparers. Custom list fields and severity lists have only the
+  per-list limit. None of this is a run-time
+  guarantee: a crafted custom list of about 1.5 MB took over a minute in one local measurement, and a file
+  near the 25 MB size limit can take far longer.
 - It compares two files you provide; it does not fetch advisories or talk to GitHub.
 - A newer OSV schema may allow things this version rejects (for example a new ecosystem); you would
   see an `unknown-ecosystem`-style error until the vendored schema is updated.

@@ -1,4 +1,5 @@
-import { overlap, pairItems, setMinus } from "../pairing.js";
+import { MAX_MATCHING_WORK, overlap, pairItems, setMinus } from "../pairing.js";
+import type { WorkBudget } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asArray, asObjectArray, canonical, clone, getOwn, isObject, isString, shorten } from "../util.js";
 import { diffGeneric } from "./generic.js";
@@ -62,6 +63,38 @@ function entryTokens(entry: JsonObject): string[] {
   ];
 }
 
+type TokenSets = (o: JsonObject) => Set<string>;
+
+/** Matching compares the same objects many times, so derive each object's tokens only once. */
+function memoized(f: (o: JsonObject) => string[]): TokenSets {
+  const cache = new WeakMap<JsonObject, Set<string>>();
+  return (o) => {
+    let tokens = cache.get(o);
+    if (!tokens) {
+      tokens = new Set(f(o));
+      cache.set(o, tokens);
+    }
+    return tokens;
+  };
+}
+
+/**
+ * State for one `diffAffected` call. The token caches live here rather than at module scope
+ * because callers of the public `diffAdvisories` may change an object between two comparisons.
+ */
+interface MatchContext {
+  budget: WorkBudget;
+  eventSet: TokenSets;
+  entrySet: TokenSets;
+  /** Set when a limit stopped range pairing, so ranges were reported as removed and added. */
+  rangesSkipped: boolean;
+}
+
+/** One unit for the comparison itself, plus the set look-ups `overlap` will make. */
+function matchWeight(tokensOf: TokenSets): (b: JsonObject, a: JsonObject) => number {
+  return (b, a) => 1 + Math.min(tokensOf(b).size, tokensOf(a).size);
+}
+
 function normalizeName(n: string): string {
   return n.toLowerCase().split("_").join("-").split(".").join("-");
 }
@@ -94,17 +127,23 @@ const EVENT_WHY: Record<EventKind, { removed: string; added: string; changed: st
   },
 };
 
-function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, out: Finding[]): void {
+function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, out: Finding[], ctx: MatchContext): void {
   const bs = asObjectArray(getOwn(b, "ranges"));
   const as = asObjectArray(getOwn(a, "ranges"));
   const rangeId = (r: JsonObject): string => `${String(getOwn(r, "type") ?? "?")}|${String(getOwn(r, "repo") ?? "")}`;
-  const { pairs, restB, restA } = pairItems(
+  const { pairs, restB, restA, skipped } = pairItems(
     bs,
     as,
     (r) => canonical(r),
     (r) => canonical(r),
-    (rb, ra) => (rangeId(rb) === rangeId(ra) ? 100 + overlap(eventTokens(rb), eventTokens(ra)) : -1),
+    (rb, ra) => (rangeId(rb) === rangeId(ra) ? 100 + overlap(ctx.eventSet(rb), ctx.eventSet(ra)) : -1),
+    { budget: ctx.budget, weight: matchWeight(ctx.eventSet) },
   );
+  // Only ranges of the same type and repo can pair, so anything else did not lose out to the limit.
+  if (skipped) {
+    const idsA = new Set(restA.map((ai) => rangeId(as[ai] as JsonObject)));
+    if (restB.some((bi) => idsA.has(rangeId(bs[bi] as JsonObject)))) ctx.rangesSkipped = true;
+  }
 
   for (const { bi, ai, exact } of pairs) {
     if (exact) continue;
@@ -229,7 +268,7 @@ function remainder(entry: JsonObject): JsonValue {
   return c;
 }
 
-function diffPair(b: JsonObject, a: JsonObject, ai: number, out: Finding[]): void {
+function diffPair(b: JsonObject, a: JsonObject, ai: number, out: Finding[], ctx: MatchContext): void {
   const label = labelOf(a, ai);
   const path = `affected[${label}]`;
   const pb = pkgOf(b);
@@ -291,7 +330,7 @@ function diffPair(b: JsonObject, a: JsonObject, ai: number, out: Finding[]): voi
   }
 
   diffSeverity(getOwn(b, "severity"), getOwn(a, "severity"), `${path}.severity`, ` (affected ${label})`, out);
-  diffRanges(b, a, label, path, out);
+  diffRanges(b, a, label, path, out, ctx);
   diffVersions(b, a, label, path, out);
   diffGeneric(remainder(b), remainder(a), path, out);
 }
@@ -302,17 +341,30 @@ function diffPair(b: JsonObject, a: JsonObject, ai: number, out: Finding[]): voi
  * same ecosystem are paired as a rename (the "fix a typo in the package name" case) so
  * that the REST of the entry (severity, ranges, ...) is still compared.
  */
-export function diffAffected(before: JsonValue | undefined, after: JsonValue | undefined, out: Finding[]): void {
+export function diffAffected(
+  before: JsonValue | undefined,
+  after: JsonValue | undefined,
+  out: Finding[],
+  maxMatchingWork: number = MAX_MATCHING_WORK,
+): void {
   const bs = asObjectArray(before);
   const as = asObjectArray(after);
+  const ctx: MatchContext = {
+    budget: { remaining: maxMatchingWork },
+    eventSet: memoized(eventTokens),
+    entrySet: memoized(entryTokens),
+    rangesSkipped: false,
+  };
+  const { budget, entrySet } = ctx;
+  const entryWeight = matchWeight(entrySet);
 
   const step1 = pairItems(
     bs,
     as,
     (e) => canonical(e),
     (e) => canonical(e),
-    (b, a) => (keyOf(b) === keyOf(a) && keyOf(b) !== "" ? 1000 + overlap(entryTokens(b), entryTokens(a)) : -1),
-    { bucketB: keyOf, bucketA: keyOf },
+    (b, a) => (keyOf(b) === keyOf(a) && keyOf(b) !== "" ? 1000 + overlap(entrySet(b), entrySet(a)) : -1),
+    { bucketB: keyOf, bucketA: keyOf, budget, weight: entryWeight },
   );
 
   let pairingSkipped = step1.skipped;
@@ -348,9 +400,10 @@ export function diffAffected(before: JsonValue | undefined, after: JsonValue | u
       () => "\u0001b",
       () => "\u0001a",
       (b, a) => {
-        const o = overlap(entryTokens(b), entryTokens(a));
+        const o = overlap(entrySet(b), entrySet(a));
         return o > 0 || sole ? o : -1;
       },
+      { budget, weight: entryWeight },
     );
     pairingSkipped = pairingSkipped || r.skipped;
     for (const p of r.pairs) {
@@ -364,15 +417,6 @@ export function diffAffected(before: JsonValue | undefined, after: JsonValue | u
   restB = restB.filter((i) => !pairedB.has(i));
   restA = restA.filter((i) => !pairedA.has(i));
 
-  if (pairingSkipped) {
-    out.push({
-      code: "pairing-limit",
-      level: "info",
-      path: "affected",
-      message: `Too many unmatched affected entries to search for renamed packages; the ${restB.length} removed and ${restA.length} added entries below are reported separately.`,
-    });
-  }
-
   // Step 3: a single unmatched entry on each side is treated as the same entry.
   if (restB.length === 1 && restA.length === 1) {
     matched.push({ bi: restB[0] as number, ai: restA[0] as number, exact: false });
@@ -380,12 +424,31 @@ export function diffAffected(before: JsonValue | undefined, after: JsonValue | u
     restA = [];
   }
 
+  // After step 3, so that the counts below match the entries that really are reported separately.
+  if (pairingSkipped && (restB.length > 0 || restA.length > 0)) {
+    out.push({
+      code: "pairing-limit",
+      level: "info",
+      path: "affected",
+      message: `Too many unmatched affected entries to search for renamed packages; the ${restB.length} removed and ${restA.length} added entries are reported separately.`,
+    });
+  }
+
   matched.sort((x, y) => x.bi - y.bi || x.ai - y.ai);
   for (const { bi, ai, exact } of matched) {
     if (exact) continue;
     const b = bs[bi];
     const a = as[ai];
-    if (b && a) diffPair(b, a, ai, out);
+    if (b && a) diffPair(b, a, ai, out, ctx);
+  }
+
+  if (ctx.rangesSkipped) {
+    out.push({
+      code: "pairing-limit",
+      level: "info",
+      path: "affected",
+      message: "A matching limit was reached while pairing version ranges; some ranges are reported as removed and added instead of changed.",
+    });
   }
 
   for (const bi of restB) {

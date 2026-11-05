@@ -12,6 +12,15 @@ Terminal output
   the bytes differ.
 - Usage errors now escape file names and arguments.
 
+Limits
+
+- The scoring work of `affected` entry and range matching is now limited per comparison, and long runs of
+  identical items and long lists of removed references no longer take quadratic time. This is not a limit on
+  total run time.
+- `pairing-limit` notices now also cover range, custom and severity lists over the per-list limit, and their
+  counts match the entries reported separately. A range notice is given only when the skipped ranges could have
+  been paired.
+
 ## 0.1.0
 
 Initial release. Published to npm as `advisoryguard@0.1.0` on 2026-10-26.

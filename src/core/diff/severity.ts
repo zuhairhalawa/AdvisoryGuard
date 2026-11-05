@@ -56,13 +56,21 @@ export function diffSeverity(
 ): void {
   const bs = toEntries(before);
   const as = toEntries(after);
-  const { pairs, restB, restA } = pairItems(
+  const { pairs, restB, restA, skipped } = pairItems(
     bs,
     as,
     (b) => `${b.type}|${b.key}`,
     (a) => `${a.type}|${a.key}`,
     (b, a) => (b.type === a.type ? 0 : -1),
   );
+  if (skipped) {
+    out.push({
+      code: "pairing-limit",
+      level: "info",
+      path: basePath,
+      message: `Too many items in ${basePath} to match them up; changed items may be reported as removed and added.`,
+    });
+  }
 
   for (const { bi, ai, exact } of pairs) {
     if (exact) continue;

@@ -7,6 +7,18 @@
 /** Upper bound on candidate (before, after) combinations scored by the heuristic phase. */
 export const MAX_PAIR_CANDIDATES = 250_000;
 
+/**
+ * Upper bound on the scoring work one comparison may spend in the heuristic phase of pairItems, for
+ * affected entries and for the ranges of paired entries. It does not cover parsing, validation, exact
+ * matching, canonicalization, token extraction, sorting or the other comparers, so it is not a run-time limit.
+ */
+export const MAX_MATCHING_WORK = 20_000_000;
+
+/** Work allowance shared by several pairItems calls in one comparison. */
+export interface WorkBudget {
+  remaining: number;
+}
+
 export interface PairResult {
   /** Matched index pairs, sorted by before-index. `exact` means canonically equal. */
   pairs: { bi: number; ai: number; exact: boolean }[];
@@ -14,8 +26,9 @@ export interface PairResult {
   restA: number[];
   /**
    * True when the heuristic (non-exact) matching phase was skipped because it would have
-   * needed more than MAX_PAIR_CANDIDATES comparisons. Unmatched items are then simply
-   * reported as removed/added, which is conservative (they still require review).
+   * needed more than MAX_PAIR_CANDIDATES comparisons or exhausted the work budget. Unmatched
+   * items are then simply reported as removed/added, which is conservative (they still
+   * require review).
    */
   skipped: boolean;
 }
@@ -25,6 +38,9 @@ export interface PairOptions<B, A> {
   bucketB?: (b: B) => string;
   bucketA?: (a: A) => string;
   maxCandidates?: number;
+  /** When both are given, each comparison spends `weight(b, a)` from `budget`; running out skips the phase. */
+  budget?: WorkBudget;
+  weight?: (b: B, a: A) => number;
 }
 
 /**
@@ -45,17 +61,19 @@ export function pairItems<B, A>(
   const usedA = new Set<number>();
   const pairs: PairResult["pairs"] = [];
 
-  const byKey = new Map<string, number[]>();
+  // A read position instead of Array.shift(): shifting a long array moves all of its elements.
+  const byKey = new Map<string, { list: number[]; next: number }>();
   as.forEach((a, ai) => {
     const k = canonA(a);
-    const list = byKey.get(k);
-    if (list) list.push(ai);
-    else byKey.set(k, [ai]);
+    const slot = byKey.get(k);
+    if (slot) slot.list.push(ai);
+    else byKey.set(k, { list: [ai], next: 0 });
   });
   bs.forEach((b, bi) => {
-    const list = byKey.get(canonB(b));
-    const ai = list?.shift();
-    if (ai !== undefined) {
+    const slot = byKey.get(canonB(b));
+    const ai = slot?.list[slot.next];
+    if (slot && ai !== undefined) {
+      slot.next++;
       pairs.push({ bi, ai, exact: true });
       usedB.add(bi);
       usedA.add(ai);
@@ -89,8 +107,17 @@ export function pairItems<B, A>(
     skipped = true;
   } else {
     const cands: { s: number; bi: number; ai: number }[] = [];
-    for (const bi of freeB) {
+    const { budget, weight } = options;
+    scoring: for (const bi of freeB) {
       for (const ai of candidatesFor(bi)) {
+        if (budget && weight) {
+          budget.remaining -= weight(bs[bi] as B, as[ai] as A);
+          if (budget.remaining < 0) {
+            skipped = true;
+            cands.length = 0;
+            break scoring;
+          }
+        }
         const s = score(bs[bi] as B, as[ai] as A);
         if (s >= 0) cands.push({ s, bi, ai });
       }
@@ -115,9 +142,11 @@ export function pairItems<B, A>(
 
 /** Size of the multiset-free intersection of two string collections. */
 export function overlap(a: Iterable<string>, b: Iterable<string>): number {
-  const sb = new Set(b);
+  const sa = a instanceof Set ? (a as Set<string>) : new Set(a);
+  const sb = b instanceof Set ? (b as Set<string>) : new Set(b);
+  const [small, large] = sa.size <= sb.size ? [sa, sb] : [sb, sa];
   let n = 0;
-  for (const x of new Set(a)) if (sb.has(x)) n++;
+  for (const x of small) if (large.has(x)) n++;
   return n;
 }
 
