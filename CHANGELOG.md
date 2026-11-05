@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+This release changes finding codes, allow-list coverage and some exit codes. See
+`docs/release-notes-v0.2.0.md` for what to check.
 
 Terminal output
 

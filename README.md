@@ -15,7 +15,7 @@ you exactly what disappeared, what changed, and why it deserves a second look.
 - Validates against the **official OpenSSF OSV JSON schema** (vendored, pinned and hash-checked).
 - Pure Node.js (>= 20, no native code), one runtime dependency (`ajv`).
 
-> **Status:** v0.1.0 is available on npm! Install with `npm install -g advisoryguard` or run it directly with `npx advisoryguard --version`.
+> **Status:** available on npm. Install with `npm install -g advisoryguard` or run it directly with `npx advisoryguard --version`.
 
 <p align="center">
   <img src="docs/assets/advisoryguard-cvss-removal-demo.gif" alt="Terminal recording: advisoryguard diff compares test/fixtures/regression-before.json with regression-after-bug.json. It reports two REVIEW findings, severity-removed for CVSS_V3 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H, base score 9.8, Critical) and for CVSS_V4, plus a package-renamed finding for @acme/parsr to @acme/parser, and finishes with REVIEW REQUIRED (3 changes need review, 1 informational) and exit code 1." width="880">
@@ -116,7 +116,7 @@ REVIEW REQUIRED (1 change needs review, 1 informational)
 
 Requires Node.js 20 or newer.
 
-From npm (published as [`advisoryguard@0.1.0`](https://www.npmjs.com/package/advisoryguard)):
+From npm ([`advisoryguard`](https://www.npmjs.com/package/advisoryguard)):
 
 ```sh
 npm install --global advisoryguard
@@ -132,8 +132,8 @@ git clone https://github.com/zuhairhalawa/AdvisoryGuard.git
 cd AdvisoryGuard
 npm ci
 npm run build
-npm pack                       # creates advisoryguard-0.1.0.tgz
-npm install --global ./advisoryguard-0.1.0.tgz
+npm pack                       # creates advisoryguard-0.2.0.tgz
+npm install --global ./advisoryguard-0.2.0.tgz
 ```
 
 ## Usage
