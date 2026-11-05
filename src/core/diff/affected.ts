@@ -1,7 +1,8 @@
 import { MAX_MATCHING_WORK, PAIRING_LIMIT_WHY, overlap, pairItems, setMinus } from "../pairing.js";
 import type { WorkBudget } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
-import { asArray, asObjectArray, canonical, clone, getOwn, isObject, isString, shorten } from "../util.js";
+import { asArray, asObjectArray, canonical, clone, getOwn, hasOwn, isObject, isString, shorten } from "../util.js";
+import { differsOnlyInLeadingZeros, hasLeadingZero, rejectsLeadingZeros } from "../versionSpelling.js";
 import { diffGeneric, diffOtherKeys } from "./generic.js";
 import { diffSeverity } from "./severity.js";
 
@@ -152,6 +153,88 @@ function boundConvertedWhy(git: boolean, valueKept: boolean): string {
     : `${ends} Replacing one with the other may change which releases are affected, or may change nothing, depending on what the package has released. AdvisoryGuard does not compare versions, so check the package's release history.`;
 }
 
+const KNOWN_RANGE = "last_known_affected_version_range";
+
+function knownRangeOf(entry: JsonObject): JsonValue | undefined {
+  const specific = getOwn(entry, "database_specific");
+  return isObject(specific) ? getOwn(specific, KNOWN_RANGE) : undefined;
+}
+
+/** The known range an edit removed from this entry, if it was a string. */
+function knownRangeRemoved(b: JsonObject, a: JsonObject): string | undefined {
+  const known = knownRangeOf(b);
+  if (!isString(known)) return undefined;
+  const specific = getOwn(a, "database_specific");
+  return isObject(specific) && hasOwn(specific, KNOWN_RANGE) ? undefined : known;
+}
+
+function withoutKnownRange(entry: JsonValue): JsonValue {
+  if (!isObject(entry)) return entry;
+  const specific = getOwn(entry, "database_specific");
+  if (isObject(specific)) {
+    delete specific["last_known_affected_version_range"];
+    if (Object.keys(specific).length === 0) delete entry["database_specific"];
+  }
+  return entry;
+}
+
+interface AddedEnd {
+  kind: "fixed" | "last_affected";
+  value: string;
+}
+
+/** The one end a range gained, when that is the only change to its events. */
+function soleAddedEnd(gone: Record<EventKind, string[]>, fresh: Record<EventKind, string[]>): AddedEnd | undefined {
+  if (EVENT_KINDS.some((k) => gone[k].length > 0) || fresh.introduced.length > 0 || fresh.limit.length > 0) return undefined;
+  const ends: AddedEnd[] = [
+    ...fresh.fixed.map((value) => ({ kind: "fixed" as const, value })),
+    ...fresh.last_affected.map((value) => ({ kind: "last_affected" as const, value })),
+  ];
+  return ends.length === 1 ? ends[0] : undefined;
+}
+
+/** Whether the text names exactly this end. This compares strings only, not versions. */
+function knownRangeNames(known: string, end: AddedEnd): boolean {
+  const m = /^\s*(<=|<)\s*(\S+)\s*$/.exec(known);
+  if (!m) return false;
+  return m[2] === end.value && m[1] === (end.kind === "fixed" ? "<" : "<=");
+}
+
+function knownRangeConverted(known: string, end: AddedEnd, where: string, path: string): Finding {
+  const same = knownRangeNames(known, end);
+  const seen = "Tools that read only the range events now see this end, which they did not before, so versions past it may stop being flagged.";
+  return {
+    code: "known-range-converted",
+    level: "review",
+    path,
+    message: `${KNOWN_RANGE} "${shorten(known, 80)}" was replaced by "${end.kind}" ${end.value} in ${where}: ${same ? "both name the same end" : "the two do not name the same end"}.`,
+    why: same
+      ? `${seen} Confirm the value is right.`
+      : `${seen} AdvisoryGuard does not compare versions, so check the package's release history to confirm the new end is right.`,
+    before: known,
+    after: end.value,
+  };
+}
+
+function spellingChanged(kind: EventKind, from: string, to: string, where: string, path: string, strict: boolean): Finding {
+  const fromZero = hasLeadingZero(from);
+  const toZero = hasLeadingZero(to);
+  const change = fromZero && !toZero ? ", with leading zeros removed" : !fromZero && toZero ? ", with leading zeros added" : "";
+  return {
+    code: "version-spelling-changed",
+    level: "review",
+    path,
+    message: change
+      ? `"${kind}" value changed spelling in ${where}: ${from} -> ${to}${change}. The numbers are the same.`
+      : `"${kind}" values in ${where} differ only in leading zeros: ${from} -> ${to}.`,
+    why: strict
+      ? "Semantic versions cannot have leading zeros, so a value with them may not match any published release, and tools may read the two spellings differently. Confirm the spelling that was published."
+      : "Some version schemes treat these spellings as the same version and others do not, so tools may read them differently. Confirm the spelling that was published.",
+    before: from,
+    after: to,
+  };
+}
+
 function reportBoundConversions(
   gone: Record<EventKind, string[]>,
   fresh: Record<EventKind, string[]>,
@@ -202,7 +285,20 @@ function reportBoundConversions(
   }
 }
 
-function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, out: Finding[], ctx: MatchContext): void {
+/**
+ * Compare the ranges of a pair of entries. `known` is a known range the edit removed; returns whether a
+ * range's new end was reported as replacing it, in which case the caller should not report it as removed.
+ */
+function diffRanges(
+  b: JsonObject,
+  a: JsonObject,
+  label: string,
+  path: string,
+  ecosystem: string | undefined,
+  known: string | undefined,
+  out: Finding[],
+  ctx: MatchContext,
+): boolean {
   const bs = asObjectArray(getOwn(b, "ranges"));
   const as = asObjectArray(getOwn(a, "ranges"));
   const rangeId = (r: JsonObject): string => `${textOf(getOwn(r, "type"), "?")}|${textOf(getOwn(r, "repo"), "")}`;
@@ -220,32 +316,58 @@ function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, o
     if (restB.some((bi) => idsA.has(rangeId(bs[bi] as JsonObject)))) ctx.rangesSkipped = true;
   }
 
-  for (const { bi, ai, exact } of pairs) {
+  const valuesOf = (r: JsonObject, kind: EventKind): string[] =>
+    asObjectArray(getOwn(r, "events")).map((e) => getOwn(e, kind)).filter(isString);
+  const eventDelta = (x: JsonObject, y: JsonObject): Record<EventKind, string[]> => ({
+    introduced: setMinus(valuesOf(x, "introduced"), valuesOf(y, "introduced")).sort(),
+    fixed: setMinus(valuesOf(x, "fixed"), valuesOf(y, "fixed")).sort(),
+    last_affected: setMinus(valuesOf(x, "last_affected"), valuesOf(y, "last_affected")).sort(),
+    limit: setMinus(valuesOf(x, "limit"), valuesOf(y, "limit")).sort(),
+  });
+
+  // If several ranges each gained an end, which one replaced the known range cannot be known, and
+  // array order must not decide. They are then reported as ordinary additions.
+  const candidates = known === undefined
+    ? []
+    : pairs.filter(({ bi, ai, exact }) => {
+        const rb = bs[bi];
+        const ra = as[ai];
+        return !exact && rb && ra && soleAddedEnd(eventDelta(rb, ra), eventDelta(ra, rb)) !== undefined;
+      });
+  const replacing = candidates.length === 1 ? candidates[0] : undefined;
+
+  for (const pair of pairs) {
+    const { bi, ai, exact } = pair;
     if (exact) continue;
     const rb = bs[bi];
     const ra = as[ai];
     if (!rb || !ra) continue;
     const rtype = textOf(getOwn(rb, "type"), "range");
     const where = `${rtype} range of ${label}`;
-    const valuesOf = (r: JsonObject, kind: EventKind): string[] =>
-      asObjectArray(getOwn(r, "events")).map((e) => getOwn(e, kind)).filter(isString);
-    const eventDelta = (x: JsonObject, y: JsonObject): Record<EventKind, string[]> => ({
-      introduced: setMinus(valuesOf(x, "introduced"), valuesOf(y, "introduced")).sort(),
-      fixed: setMinus(valuesOf(x, "fixed"), valuesOf(y, "fixed")).sort(),
-      last_affected: setMinus(valuesOf(x, "last_affected"), valuesOf(y, "last_affected")).sort(),
-      limit: setMinus(valuesOf(x, "limit"), valuesOf(y, "limit")).sort(),
-    });
     const goneByKind = eventDelta(rb, ra);
     const freshByKind = eventDelta(ra, rb);
     const afterNamesFixed = valuesOf(ra, "fixed").length > 0;
     const afterHasEnd = afterNamesFixed || valuesOf(ra, "last_affected").length > 0;
     reportBoundConversions(goneByKind, freshByKind, where, path, rtype === "GIT", afterNamesFixed, out);
+    if (pair === replacing && known !== undefined) {
+      const end = soleAddedEnd(goneByKind, freshByKind);
+      if (end) {
+        out.push(knownRangeConverted(known, end, where, path));
+        freshByKind[end.kind] = [];
+      }
+    }
     for (const kind of EVENT_KINDS) {
       const gone = goneByKind[kind];
       const fresh = freshByKind[kind];
       // Which of several values replaced which cannot be known without comparing versions.
       const n = gone.length === 1 && fresh.length === 1 ? 1 : 0;
       for (let k = 0; k < n; k++) {
+        const from = gone[k] as string;
+        const to = fresh[k] as string;
+        if (rtype !== "GIT" && differsOnlyInLeadingZeros(from, to)) {
+          out.push(spellingChanged(kind, from, to, where, path, rejectsLeadingZeros(ecosystem, rtype)));
+          continue;
+        }
         out.push({
           code: "range-event-changed",
           level: "review",
@@ -316,6 +438,7 @@ function diffRanges(b: JsonObject, a: JsonObject, label: string, path: string, o
       after: canonical(r),
     });
   }
+  return replacing !== undefined;
 }
 
 function diffVersions(b: JsonObject, a: JsonObject, label: string, path: string, out: Finding[]): void {
@@ -423,9 +546,56 @@ function diffPair(b: JsonObject, a: JsonObject, ai: number, out: Finding[], ctx:
   }
 
   diffSeverity(getOwn(b, "severity"), getOwn(a, "severity"), `${path}.severity`, ` (affected ${label})`, out);
-  diffRanges(b, a, label, path, out, ctx);
+  const replaced = diffRanges(b, a, label, path, pa?.ecosystem ?? pb?.ecosystem, knownRangeRemoved(b, a), out, ctx);
   diffVersions(b, a, label, path, out);
-  diffGeneric(remainder(b), remainder(a), path, out);
+  // Every other key of database_specific is still compared, so a value dropped alongside it is still reported.
+  const rest = (entry: JsonObject): JsonValue => (replaced ? withoutKnownRange(remainder(entry)) : remainder(entry));
+  diffGeneric(rest(b), rest(a), path, out);
+}
+
+/**
+ * Packages in one advisory often share a fix. Report any that had the same version data as a package
+ * this edit changed, but did not change themselves. One finding per group keeps long lists readable.
+ */
+function reportLeftOutPackages(bs: JsonObject[], as: JsonObject[], matched: { bi: number; ai: number }[], out: Finding[]): void {
+  const dataKey = (entry: JsonObject): string | null => {
+    const ranges = asArray(getOwn(entry, "ranges"));
+    const known = knownRangeOf(entry);
+    return ranges.length === 0 && known === undefined ? null : JSON.stringify([canonical(ranges), canonical(known)]);
+  };
+  const groups = new Map<string, { changed: Set<string>; same: Set<string> }>();
+  for (const { bi, ai } of matched) {
+    const b = bs[bi];
+    const a = as[ai];
+    if (!b || !a) continue;
+    const p = pkgOf(a);
+    if (!p || (!p.name && !p.ecosystem)) continue;
+    const key = dataKey(b);
+    if (key === null) continue;
+    let group = groups.get(key);
+    if (!group) {
+      group = { changed: new Set(), same: new Set() };
+      groups.set(key, group);
+    }
+    // Only the ranges count as a change: a known range note can go on its own without changing what the advisory covers.
+    const rangesChanged = canonical(asArray(getOwn(a, "ranges"))) !== canonical(asArray(getOwn(b, "ranges")));
+    (rangesChanged ? group.changed : group.same).add(labelOf(a, ai));
+  }
+  for (const key of [...groups.keys()].sort()) {
+    const group = groups.get(key);
+    if (!group || group.changed.size === 0) continue;
+    // Two entries for one package can differ on purpose, so that is not a package left out.
+    const leftOut = [...group.same].filter((l) => !group.changed.has(l)).sort();
+    if (leftOut.length === 0) continue;
+    out.push({
+      code: "sibling-package-unchanged",
+      level: "review",
+      path: `affected[${leftOut[0] as string}]`,
+      message: `Version ranges changed for ${previewList([...group.changed].sort())} but not for ${previewList(leftOut)}, which had the same version data before this edit.`,
+      why: "Packages in one advisory often share a fix. If these do, they need the same change. If they really differ, this can be allowed.",
+      after: leftOut,
+    });
+  }
 }
 
 /**
@@ -546,6 +716,7 @@ export function diffAffected(
   for (const { bi } of changed) {
     for (const f of reports.get(bi) ?? []) out.push(f);
   }
+  reportLeftOutPackages(bs, as, matched, out);
 
   if (ctx.rangesSkipped) {
     out.push({

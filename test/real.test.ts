@@ -197,7 +197,13 @@ describe("genuine GitHub advisories: no false negatives (injected mistakes are c
     const ev = d.affected[idx].ranges.flatMap((r: any) => r.events).find((e: any) => e.fixed !== undefined);
     ev.fixed = ev.fixed + ".1";
     const codes = run(orig, d).findings.map((x) => x.code);
-    expect(codes).toEqual(["range-event-changed"]);
+    expect(codes.filter((c) => c !== "sibling-package-unchanged")).toEqual(["range-event-changed"]);
+    // Editing one package also names any other package that had identical version data.
+    const versionData = (a: any): string => JSON.stringify([a.ranges, a.database_specific?.last_known_affected_version_range]);
+    const shared = affected.some(
+      (a, i) => i !== idx && a.package?.name !== affected[idx].package?.name && versionData(a) === versionData(affected[idx]),
+    );
+    expect(codes.includes("sibling-package-unchanged")).toBe(shared);
   });
 
   it.each(files)("%s: corrupting the record makes it invalid with a specific, located error", (f) => {

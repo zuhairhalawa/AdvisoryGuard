@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+This changes finding codes and allow-list coverage. The cases come from running the tool on real advisory edits.
+
+- New `sibling-package-unchanged` finding: version ranges changed for one package but not for another in the same
+  advisory that had the same version data. It needs review, because packages often share a fix but can really
+  differ. A `--allow` list that used to pass such an edit now also has to name this code.
+- New `known-range-converted` finding: `last_known_affected_version_range` replaced by a range's one new end. This
+  was reported as an added event and a removed field, and the second suggested the value may have been dropped by
+  accident. The finding says whether the two name the same end, comparing strings only. A `--allow` list naming
+  `range-event-added,field-removed` no longer covers this case.
+- New `version-spelling-changed` finding: a range value that changes only in leading zeros, such as `2025.08.14` to
+  `2025.8.14`. `--allow range-event-changed` no longer covers this case.
+- New `version-leading-zero` warning from `validate`, for range events in `npm` packages and `SEMVER` ranges. The
+  file is still valid OSV, so `validate` still exits 0.
+
 ## 0.2.0
 
 This release changes finding codes, allow-list coverage and some exit codes. See the

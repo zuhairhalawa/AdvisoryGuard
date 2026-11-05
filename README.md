@@ -197,7 +197,7 @@ On top of the schema it adds a few checks, each reported with its own code:
 - GitHub REST/GraphQL advisory objects (not OSV) are recognised and rejected with a pointer to the OSV format.
 
 Problems are `error` (invalid, exit 2) or `warning` (valid but unusual: missing severity, duplicate
-references, scheme-less URLs, non-semver versions in a SEMVER range, ...). JSON Schema
+references, scheme-less URLs, non-semver versions in a SEMVER range, leading zeros in an npm or SEMVER version, ...). JSON Schema
 `format` keywords (`uri`, `date-time`) are treated as annotations, as in the specification's default
 mode, so a genuine GitHub record with a scheme-less reference URL is valid with a warning.
 
@@ -209,7 +209,7 @@ the indexes in paths:
 | --- | --- |
 | `severity[]` (also `affected[].severity`) | Matched by type, so CVSS v3 and v4 (and several entries) stay distinct. Removed = review, changed = review (with metric delta and v3 base score), added = info. |
 | `affected[]` | Matched by ecosystem+name; a lone unmatched package in the same ecosystem is treated as a **rename** so its ranges/severity are still compared. Removed/added packages = review. |
-| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. removing the only `fixed` leaves the range open-ended). Replacing `last_affected` with `fixed` (or the reverse) in a range, with the same number of values on both sides, = one review finding (`range-bound-converted`), because `last_affected` is an inclusive end and `fixed` an exclusive one, so affected status may change and needs checking against the package's release history (the repository's history for a GIT range). Several values of one kind in a range are listed without being paired. Explicit `versions[]` additions/removals = review. |
+| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. removing the only `fixed` leaves the range open-ended). Replacing `last_affected` with `fixed` (or the reverse) in a range, with the same number of values on both sides, = one review finding (`range-bound-converted`), because `last_affected` is an inclusive end and `fixed` an exclusive one, so affected status may change and needs checking against the package's release history (the repository's history for a GIT range). Several values of one kind in a range are listed without being paired. Replacing `database_specific.last_known_affected_version_range` with a range's one new end = one review finding (`known-range-converted`), which says whether the two name the same end. A value that changes only in leading zeros = review (`version-spelling-changed`). Version ranges changing for one package but not for another that had the same version data = review (`sibling-package-unchanged`). Explicit `versions[]` additions/removals = review. |
 | references, aliases, related, upstream | Removal = review (lost provenance / cross-references); addition = info. URLs compared ignoring trailing slash and host case. |
 | CWE (`database_specific.cwe_ids`), GitHub severity label | Removal/change = review; addition = info. |
 | `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). Two exceptions = info: setting a missing `published`, and changing the date of an existing `withdrawn`. |
@@ -262,6 +262,14 @@ and every such finding says why.
   of events, severity entries and references have only the per-list limit. None of this is a run-time
   guarantee: a crafted custom list of about 1.5 MB took over a minute in one local measurement, and a file
   near the 25 MB size limit can take far longer.
+- `sibling-package-unchanged` compares each package's version data as written, so it can only ask whether a
+  package was left out. Packages can really differ, and it does not notice packages whose ranges already differed
+  before the edit. Allow the code when the difference is intended.
+- `known-range-converted` compares strings only. It reads `< Y` and `<= Y`; any other form is reported as not
+  naming the same end, even if it does.
+- The leading-zero checks read spelling only, and cover range events in `npm` packages and `SEMVER` ranges. They
+  cannot tell whether a version was published. Other ecosystems can allow these spellings, so `validate` says
+  nothing about them there.
 - The tool does not compare versions, so a `range-bound-converted` finding cannot say whether any release
   changes status. Check the package's release history. If a value stays the same on both sides, the finding
   says that this end now includes or excludes it. Several values of one kind in a range are listed without

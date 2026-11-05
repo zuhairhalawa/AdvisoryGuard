@@ -5,6 +5,7 @@ import type { DuplicateKey } from "./load.js";
 import { LATEST_KNOWN_SCHEMA_MINOR, SUPPORTED_SCHEMA_MAJOR, loadOsvSchema } from "./osvSchema.js";
 import type { Finding, JsonObject, JsonValue, ValidationResult } from "./types.js";
 import { asArray, asObjectArray, getOwn, isObject, isString, shorten } from "./util.js";
+import { hasLeadingZero, rejectsLeadingZeros, withoutLeadingZeros } from "./versionSpelling.js";
 
 let compiled: ValidateFunction | undefined;
 
@@ -294,14 +295,14 @@ function checkAffected(affected: JsonValue | undefined, out: Finding[]): void {
     }
     if (Array.isArray(ranges)) {
       ranges.forEach((range, j) => {
-        if (isObject(range)) checkRange(range, `${base}.ranges[${j}]`, out);
+        if (isObject(range)) checkRange(range, `${base}.ranges[${j}]`, isObject(pkg) ? getOwn(pkg, "ecosystem") : undefined, out);
       });
     }
     checkSeverityList(getOwn(entry, "severity"), `${base}.severity`, out);
   });
 }
 
-function checkRange(range: JsonObject, path: string, out: Finding[]): void {
+function checkRange(range: JsonObject, path: string, ecosystem: JsonValue | undefined, out: Finding[]): void {
   const type = getOwn(range, "type");
   const events = getOwn(range, "events");
   if (!Array.isArray(events)) return;
@@ -319,6 +320,13 @@ function checkRange(range: JsonObject, path: string, out: Finding[]): void {
           level: "warning",
           path: evPath,
           message: `"${shorten(value, 60)}" is not a valid semantic version, but the range type is SEMVER.`,
+        });
+      } else if (rejectsLeadingZeros(ecosystem, type) && hasLeadingZero(value)) {
+        out.push({
+          code: "version-leading-zero",
+          level: "warning",
+          path: evPath,
+          message: `"${shorten(value, 60)}" has a leading zero, which semantic versions do not allow, so it may not match any published release. The likely spelling is ${shorten(withoutLeadingZeros(value), 60)}.`,
         });
       }
     }
