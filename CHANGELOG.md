@@ -12,6 +12,20 @@ Terminal output
   the bytes differ.
 - Usage errors now escape file names and arguments.
 
+Findings
+
+- New `range-bound-converted` finding for `last_affected` replaced by `fixed` (or the reverse). These edits
+  were reported as separate removed and added events with explanations that could point the wrong way. The
+  finding says affected status may change and asks for a check of the release history, or of the repository for
+  a GIT range. It lists several values in one range without pairing them. The run still requires review, but a
+  `--allow` list naming `range-event-removed,range-event-added` no longer covers this case.
+- Several values of one kind changing in one range are now reported as removed and added, instead of being
+  paired by text order (which could claim that 10.0.0 became 2.0.1). `--allow range-event-changed` no longer
+  covers that case.
+- Event explanations no longer say "open-ended" while another end remains in the range, "ends earlier" when a
+  new `fixed` closes a new interval, or that versions between two `fixed` values "change status" for certain.
+  Explanations of new `introduced`, `last_affected` and `limit` events now say "may".
+
 Limits
 
 - The scoring work of `affected` entry and range matching is now limited per comparison, and long runs of

@@ -16,7 +16,7 @@ import { canonical, sanitizeForTerminal, stringifyForTerminal } from "../src/cor
 import { diffAdvisories, validateText } from "../src/index.js";
 import { createStyle } from "../src/report/style.js";
 import { renderDiff, renderValidate } from "../src/report/text.js";
-import { codes, diff } from "./helpers.js";
+import { codes, diff, reviewCodes } from "./helpers.js";
 
 const tmp = mkdtempSync(join(tmpdir(), "advisoryguard-hardening-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -48,6 +48,7 @@ function cliDiff(before: JsonObject, after: JsonObject, extraArgs: string[] = []
   return { code: run(["diff", b, a, ...extraArgs], io), out };
 }
 
+const LAST_AFFECTED: JsonObject[] = [{ introduced: "0" }, { last_affected: "22.0.4" }];
 const FIXED: JsonObject[] = [{ introduced: "0" }, { fixed: "23.0.0" }];
 
 describe("sanitizeForTerminal", () => {
@@ -107,6 +108,132 @@ describe("text report of untrusted advisory values", () => {
       expect(r.out.includes(ch)).toBe(false);
       expect(r.out).toContain(`@acme/par${BS}${shown}ser`);
     }
+  });
+});
+
+describe("range end changing kind", () => {
+  function onlyConversion(findings: Finding[]): Finding {
+    const found = findings.filter((f) => f.code === "range-bound-converted");
+    expect(found).toHaveLength(1);
+    return found[0] as Finding;
+  }
+
+  /** The tool has no release history, so it must not say that any release did or did not change status. */
+  function expectNonCommittalExplanation(f: Finding): void {
+    expect(f.why).toMatch(/may change which releases are affected, or may change nothing/);
+    expect(f.why).toMatch(/"last_affected" is an inclusive end/);
+    expect(f.why).toMatch(/"fixed" is an exclusive end/);
+    expect(f.why).toMatch(/release history/);
+    expect(`${f.message} ${f.why}`).not.toMatch(/change status|open-ended|earlier/);
+  }
+
+  it("does not claim a status change when both ends may describe the same releases", () => {
+    // If 4.32.1 is the release right after 4.32.0, these two ends describe the same affected set.
+    const r = diff(
+      doc([{ introduced: "0" }, { last_affected: "4.32.0" }]),
+      doc([{ introduced: "0" }, { fixed: "4.32.1" }]),
+    );
+    expect(reviewCodes(r)).toEqual(["range-bound-converted"]);
+    const f = onlyConversion(r.findings);
+    expect(f.before).toBe("4.32.0");
+    expect(f.after).toBe("4.32.1");
+    expectNonCommittalExplanation(f);
+  });
+
+  it("describes both ends of a conversion that can widen the affected set, without saying it does", () => {
+    // A release such as 22.0.5, if one exists, would move from unaffected to affected.
+    const r = diff(doc(LAST_AFFECTED), doc(FIXED));
+    expect(reviewCodes(r)).toEqual(["range-bound-converted"]);
+    const f = onlyConversion(r.findings);
+    expect(f.before).toBe("22.0.4");
+    expect(f.after).toBe("23.0.0");
+    expect(f.message).toContain("an inclusive end at 22.0.4 became an exclusive end at 23.0.0");
+    expectNonCommittalExplanation(f);
+  });
+
+  it("reports the reverse conversion and says the patched version is gone", () => {
+    const r = diff(doc(FIXED), doc(LAST_AFFECTED));
+    expect(reviewCodes(r)).toEqual(["range-bound-converted"]);
+    const f = onlyConversion(r.findings);
+    expect(f.before).toBe("23.0.0");
+    expect(f.after).toBe("22.0.4");
+    expect(f.message).toContain("an exclusive end at 23.0.0 became an inclusive end at 22.0.4");
+    expect(f.message).toMatch(/no longer names a patched version/);
+    expectNonCommittalExplanation(f);
+  });
+
+  it("does not say the patched version is gone when another fixed event remains", () => {
+    // Mixing both kinds in one range is invalid OSV, but the comparison still has to describe it correctly.
+    const r = diff(
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "2.0.0" }, { fixed: "3.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "2.0.0" }, { last_affected: "2.5.0" }]),
+    );
+    expect(r.status).toBe("invalid");
+    const f = onlyConversion(r.findings);
+    expect(f.message).toContain("an exclusive end at 3.0.0 became an inclusive end at 2.5.0");
+    expect(f.message).not.toMatch(/no longer names a patched version/);
+  });
+
+  it("lists several converted ends without pairing them, because it does not compare versions", () => {
+    // Sorted as text, 10.0.0 comes before 2.0.0, so pairing by position would claim 10.0.0 became 2.0.1.
+    const r = diff(
+      doc([{ introduced: "0" }, { last_affected: "2.0.0" }, { introduced: "5.0.0" }, { last_affected: "10.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "2.0.1" }, { introduced: "5.0.0" }, { fixed: "9.0.0" }]),
+    );
+    expect(reviewCodes(r)).toEqual(["range-bound-converted"]);
+    const f = onlyConversion(r.findings);
+    expect(f.before).toEqual(["10.0.0", "2.0.0"]);
+    expect(f.after).toEqual(["2.0.1", "9.0.0"]);
+    expect(f.message).toMatch(/not paired/);
+    expect(f.message).not.toMatch(/10\.0\.0 was replaced|2\.0\.0 was replaced/);
+    expectNonCommittalExplanation(f);
+  });
+
+  it("reports an interval count change as one conversion plus the removed introduced event", () => {
+    const r = diff(
+      doc([{ introduced: "0" }, { last_affected: "2.0.0" }, { introduced: "5.0.0" }, { last_affected: "6.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "7.0.0" }]),
+    );
+    expect(codes(r).sort()).toEqual(["range-bound-converted", "range-event-removed"]);
+    const f = onlyConversion(r.findings);
+    expect(f.before).toEqual(["2.0.0", "6.0.0"]);
+    expect(f.after).toEqual(["7.0.0"]);
+    expect(f.message).toMatch(/not paired/);
+    expect(r.findings.map((x) => x.why ?? "").join(" ")).not.toMatch(/open-ended|ends the vulnerable range earlier/);
+  });
+
+  it("still needs review unless the conversion code is explicitly allowed", () => {
+    expect(diff(doc(LAST_AFFECTED), doc(FIXED)).status).toBe("review");
+    const allowed = diff(doc(LAST_AFFECTED), doc(FIXED), ["range-bound-converted"]);
+    expect(allowed.status).toBe("clean");
+    expect(allowed.acknowledged).toBe(1);
+    expect(diff(doc(LAST_AFFECTED), doc(FIXED), ["range-event-removed", "range-event-added"]).status).toBe("review");
+    expect(cliDiff(doc(LAST_AFFECTED), doc(FIXED)).code).toBe(1);
+    expect(cliDiff(doc(LAST_AFFECTED), doc(FIXED), ["--allow", "range-bound-converted"]).code).toBe(0);
+  });
+
+  it("does not treat a plain removal or a same-kind change as a conversion", () => {
+    const removed = diff(doc(FIXED), doc([{ introduced: "0" }]));
+    expect(codes(removed)).toEqual(["range-event-removed"]);
+    const changed = diff(doc(FIXED), doc([{ introduced: "0" }, { fixed: "24.0.0" }]));
+    expect(codes(changed)).toEqual(["range-event-changed"]);
+  });
+
+  it("rejects fixed and last_affected in one range as invalid, whatever else the comparison lists", () => {
+    // OSV forbids both kinds in one range. This fixture exists to check the verdict, not to model a real edit.
+    const mixed = doc([{ introduced: "0" }, { last_affected: "22.0.5" }, { fixed: "23.0.0" }]);
+    const validation = validateText(JSON.stringify(mixed));
+    expect(validation.valid).toBe(false);
+    expect(validation.findings.map((f) => f.code)).toContain("range-fixed-and-last-affected");
+
+    const r = diff(doc(LAST_AFFECTED), mixed);
+    expect(r.before.valid).toBe(true);
+    expect(r.after.valid).toBe(false);
+    expect(r.status).toBe("invalid");
+    // The event changes stay listed so a reviewer can see the edit, but allowing them cannot pass the file.
+    expect(codes(r).sort()).toEqual(["range-event-added", "range-event-changed"]);
+    expect(diff(doc(LAST_AFFECTED), mixed, ["range-event-added", "range-event-changed"]).status).toBe("invalid");
+    expect(cliDiff(doc(LAST_AFFECTED), mixed).code).toBe(2);
   });
 });
 
@@ -519,6 +646,211 @@ describe("reference spelling in findings", () => {
     diffReferences([{ type: "WEB", url: spelledB }], [{ type: "ADVISORY", url: spelledA }], out);
     expect(out.map((f) => f.code)).toEqual(["reference-type-changed"]);
     expect(out[0]?.message).toContain(spelledA);
+  });
+});
+
+describe("explanations of event changes", () => {
+  const whyOf = (r: { findings: Finding[] }, code: string): string => r.findings.find((f) => f.code === code)?.why ?? "";
+
+  it("lists several same-kind ends without pairing them, because it does not compare versions", () => {
+    // Sorted as text, 10.0.0 comes before 2.0.0, so pairing by position would claim 10.0.0 became 2.0.1.
+    const r = diff(
+      doc([{ introduced: "0" }, { fixed: "2.0.0" }, { introduced: "5.0.0" }, { fixed: "10.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "2.0.1" }, { introduced: "5.0.0" }, { fixed: "9.0.0" }]),
+    );
+    expect(codes(r).sort()).toEqual(["range-event-added", "range-event-added", "range-event-removed", "range-event-removed"]);
+    expect(r.findings.map((f) => f.message).join(" ")).not.toContain("->");
+  });
+
+  it("still reports one replaced value in a kind as a change", () => {
+    const r = diff(doc(FIXED), doc([{ introduced: "0" }, { fixed: "24.0.0" }]));
+    expect(codes(r)).toEqual(["range-event-changed"]);
+    expect(r.findings[0]?.message).toContain("23.0.0 -> 24.0.0");
+    expect(r.findings[0]?.why).toMatch(/may change status/);
+  });
+
+  it("says open-ended only when no end remains in the range", () => {
+    const fixedGone = diff(doc([{ introduced: "0" }, { fixed: "1.0.0" }]), doc([{ introduced: "0" }]));
+    expect(whyOf(fixedGone, "range-event-removed")).toMatch(/open-ended/);
+    const lastAffectedGone = diff(doc([{ introduced: "0" }, { last_affected: "1.0.0" }]), doc([{ introduced: "0" }]));
+    expect(whyOf(lastAffectedGone, "range-event-removed")).toMatch(/open-ended/);
+
+    const oneFixedLeft = diff(
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "2.0.0" }, { fixed: "3.0.0" }]),
+      doc([{ introduced: "0" }, { introduced: "2.0.0" }, { fixed: "3.0.0" }]),
+    );
+    expect(whyOf(oneFixedLeft, "range-event-removed")).not.toMatch(/open-ended/);
+    expect(whyOf(oneFixedLeft, "range-event-removed")).toMatch(/Another end remains/);
+    expect(whyOf(oneFixedLeft, "range-event-removed")).not.toMatch(/more versions/);
+    const oneLastAffectedLeft = diff(
+      doc([{ introduced: "0" }, { last_affected: "1.0.0" }, { introduced: "2.0.0" }, { last_affected: "3.0.0" }]),
+      doc([{ introduced: "0" }, { introduced: "2.0.0" }, { last_affected: "3.0.0" }]),
+    );
+    expect(whyOf(oneLastAffectedLeft, "range-event-removed")).not.toMatch(/open-ended/);
+    expect(whyOf(oneLastAffectedLeft, "range-event-removed")).toMatch(/Another end remains/);
+  });
+
+  it("keeps the explanation of an introduced event when an end remains", () => {
+    const r = diff(
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "2.0.0" }, { fixed: "3.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { fixed: "3.0.0" }]),
+    );
+    expect(whyOf(r, "range-event-removed")).toMatch(/where the vulnerable range starts/);
+  });
+
+  it("does not pair one value with several, in either direction", () => {
+    const fewer = diff(
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "2.0.0" }, { fixed: "3.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "9.0.0" }, { introduced: "2.0.0" }]),
+    );
+    expect(codes(fewer)).not.toContain("range-event-changed");
+    const more = diff(
+      doc([{ introduced: "0" }, { fixed: "9.0.0" }, { introduced: "2.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "2.0.0" }, { fixed: "3.0.0" }]),
+    );
+    expect(codes(more)).not.toContain("range-event-changed");
+  });
+
+  it("does not say new start events mark more versions when they may narrow the range", () => {
+    const r = diff(
+      doc([{ introduced: "1.0.0" }, { fixed: "2.0.0" }, { introduced: "5.0.0" }, { fixed: "6.0.0" }]),
+      doc([{ introduced: "1.5.0" }, { fixed: "2.0.0" }, { introduced: "5.5.0" }, { fixed: "6.0.0" }]),
+    );
+    expect(whyOf(r, "range-event-added")).not.toMatch(/marks additional/);
+    expect(whyOf(r, "range-event-added")).toMatch(/may be marked as vulnerable/);
+  });
+
+  it("does not state as certain what a new end or a limit does to the range", () => {
+    const lastAffected = diff(doc([{ introduced: "0" }]), doc([{ introduced: "0" }, { last_affected: "1.0.0" }]));
+    expect(whyOf(lastAffected, "range-event-added")).toMatch(/may be treated as unaffected unless another interval covers them/);
+    const git = (events: JsonObject[]): JsonObject =>
+      doc(FIXED, { affected: [{ package: { ecosystem: "npm", name: "p" }, ranges: [{ type: "GIT", repo: "https://example.test/r", events }] }] });
+    const hash = "a".repeat(40);
+    const added = diff(git([{ introduced: "0" }]), git([{ introduced: "0" }, { limit: hash }]));
+    expect(whyOf(added, "range-event-added")).toMatch(/may narrow/);
+    const removed = diff(git([{ introduced: "0" }, { limit: hash }]), git([{ introduced: "0" }]));
+    expect(whyOf(removed, "range-event-removed")).toMatch(/may widen/);
+  });
+
+  it("does not say a new fixed event ends the range earlier when it closes a new interval", () => {
+    const r = diff(
+      doc(FIXED),
+      doc([{ introduced: "0" }, { fixed: "23.0.0" }, { introduced: "25.0.0" }, { fixed: "26.0.0" }]),
+    );
+    expect(whyOf(r, "range-event-added")).not.toMatch(/earlier/);
+    expect(r.findings.map((f) => f.why ?? "").join(" ")).toMatch(/unless another interval covers them/);
+  });
+});
+
+describe("conversion wording in cases the tool can tell apart", () => {
+  const only = (r: { findings: Finding[] }): Finding => {
+    const found = r.findings.filter((f) => f.code === "range-bound-converted");
+    expect(found).toHaveLength(1);
+    return found[0] as Finding;
+  };
+
+  it("does not say the range ends when an interval in it stays open", () => {
+    const f = only(
+      diff(
+        doc([{ introduced: "0" }, { last_affected: "1.0.0" }, { introduced: "2.0.0" }]),
+        doc([{ introduced: "0" }, { fixed: "1.0.1" }, { introduced: "2.0.0" }]),
+      ),
+    );
+    expect(f.message).not.toMatch(/range now ends|ends below/);
+    expect(f.message).toContain("an inclusive end at 1.0.0 became an exclusive end at 1.0.1");
+  });
+
+  it("talks about commits and the repository for a GIT range", () => {
+    const hash = (c: string): string => c.repeat(40);
+    const git = (events: JsonObject[]): JsonObject =>
+      doc(FIXED, { affected: [{ package: { ecosystem: "npm", name: "p" }, ranges: [{ type: "GIT", repo: "https://example.test/r", events }] }] });
+    const f = only(
+      diff(git([{ introduced: "0" }, { last_affected: hash("a") }]), git([{ introduced: "0" }, { fixed: hash("b") }])),
+    );
+    expect(f.why).toMatch(/that commit is affected/);
+    expect(f.why).toMatch(/which commits are affected/);
+    expect(f.why).toMatch(/repository/);
+    expect(f.why).not.toMatch(/release|package/);
+    expect(f.message).toContain(`an inclusive end at ${hash("a")} became an exclusive end at ${hash("b")}`);
+  });
+
+  it("states the flip at that end when the value stays the same, in both directions", () => {
+    const toFixed = only(
+      diff(doc([{ introduced: "0" }, { last_affected: "1.0.0" }]), doc([{ introduced: "0" }, { fixed: "1.0.0" }])),
+    );
+    expect(toFixed.message).toContain("this end no longer includes 1.0.0");
+    expect(toFixed.why).not.toMatch(/may change nothing/);
+    expect(toFixed.why).toMatch(/Confirm which is correct/);
+    expect(toFixed.why).toMatch(/may still cover it/);
+
+    const toLastAffected = only(
+      diff(doc([{ introduced: "0" }, { fixed: "1.0.0" }]), doc([{ introduced: "0" }, { last_affected: "1.0.0" }])),
+    );
+    expect(toLastAffected.message).toContain("this end now includes 1.0.0");
+    expect(toLastAffected.message).toMatch(/no longer names a patched version/);
+    expect(toLastAffected.why).not.toMatch(/may change nothing/);
+  });
+
+  it("does not say may change nothing when one of several values stays, and still does not pair them", () => {
+    const f = only(
+      diff(
+        doc([{ introduced: "0" }, { last_affected: "1.0.0" }, { introduced: "5.0.0" }, { last_affected: "6.0.0" }]),
+        doc([{ introduced: "0" }, { fixed: "1.0.0" }, { introduced: "5.0.0" }, { fixed: "7.0.0" }]),
+      ),
+    );
+    expect(f.why).not.toMatch(/may change nothing/);
+    expect(f.why).toMatch(/Confirm which is correct/);
+    expect(f.message).toMatch(/not paired/);
+    expect(f.message).not.toMatch(/same value/);
+  });
+
+  it("talks about commits in every GIT form", () => {
+    const hash = (c: string): string => c.repeat(40);
+    const git = (events: JsonObject[]): JsonObject =>
+      doc(FIXED, { affected: [{ package: { ecosystem: "npm", name: "p" }, ranges: [{ type: "GIT", repo: "https://example.test/r", events }] }] });
+    const same = only(diff(git([{ introduced: "0" }, { last_affected: hash("a") }]), git([{ introduced: "0" }, { fixed: hash("a") }])));
+    expect(same.why).toMatch(/that commit is affected/);
+    expect(same.why).not.toMatch(/version/);
+    const reverse = only(diff(git([{ introduced: "0" }, { fixed: hash("a") }]), git([{ introduced: "0" }, { last_affected: hash("b") }])));
+    expect(reverse.message).toMatch(/no longer names a patched commit/);
+    const several = only(
+      diff(
+        git([{ introduced: "0" }, { last_affected: hash("a") }, { introduced: hash("c") }, { last_affected: hash("d") }]),
+        git([{ introduced: "0" }, { fixed: hash("b") }, { introduced: hash("c") }, { fixed: hash("e") }]),
+      ),
+    );
+    expect(several.message).toMatch(/does not compare commits/);
+    expect(several.message).not.toMatch(/version/);
+  });
+
+  it("lists several values in the reverse direction, and says when no patched version remains", () => {
+    const f = only(
+      diff(
+        doc([{ introduced: "0" }, { fixed: "2.0.1" }, { introduced: "5.0.0" }, { fixed: "9.0.0" }]),
+        doc([{ introduced: "0" }, { last_affected: "2.0.0" }, { introduced: "5.0.0" }, { last_affected: "10.0.0" }]),
+      ),
+    );
+    expect(f.before).toEqual(["2.0.1", "9.0.0"]);
+    expect(f.after).toEqual(["10.0.0", "2.0.0"]);
+    expect(f.message).toMatch(/not paired/);
+    expect(f.message).toMatch(/Also, this range no longer names a patched version/);
+  });
+
+  it("does not call an edit a conversion when the target kind also lost a value", () => {
+    // Mixing both kinds in one range is invalid OSV, but the comparison still has to describe it correctly.
+    const r = diff(
+      doc([{ introduced: "0" }, { fixed: "1.0.0" }, { last_affected: "2.0.0" }]),
+      doc([{ introduced: "0" }, { fixed: "3.0.0" }]),
+    );
+    expect(codes(r).sort()).toEqual(["range-event-changed", "range-event-removed"]);
+  });
+
+  it("gives the same message and values whatever order the events are in", () => {
+    const before = doc([{ introduced: "0" }, { last_affected: "2.0.0" }, { introduced: "5.0.0" }, { last_affected: "6.0.0" }]);
+    const a = only(diff(before, doc([{ introduced: "0" }, { fixed: "2.0.1" }, { introduced: "5.0.0" }, { fixed: "7.0.0" }])));
+    const b = only(diff(before, doc([{ fixed: "7.0.0" }, { introduced: "5.0.0" }, { fixed: "2.0.1" }, { introduced: "0" }])));
+    expect(b.message).toBe(a.message);
+    expect(b.after).toEqual(a.after);
   });
 });
 

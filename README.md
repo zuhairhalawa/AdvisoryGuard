@@ -208,7 +208,7 @@ cases where array order matters):
 | --- | --- |
 | `severity[]` (also `affected[].severity`) | Matched by type, so CVSS v3 and v4 (and several entries) stay distinct. Removed = review, changed = review (with metric delta and v3 base score), added = info. |
 | `affected[]` | Matched by ecosystem+name; a lone unmatched package in the same ecosystem is treated as a **rename** so its ranges/severity are still compared. Removed/added packages = review. |
-| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. a removed `fixed` leaves the range open-ended). Explicit `versions[]` additions/removals = review. |
+| ranges / events | `introduced`, `fixed`, `last_affected`, `limit` added/removed/changed = review, with an explanation (e.g. removing the only `fixed` leaves the range open-ended). Replacing `last_affected` with `fixed` (or the reverse) in a range = one review finding (`range-bound-converted`), because `last_affected` is an inclusive end and `fixed` an exclusive one, so affected status may change and needs checking against the package's release history (the repository's history for a GIT range). Several values of one kind in a range are listed without being paired. Explicit `versions[]` additions/removals = review. |
 | references, aliases, related, upstream | Removal = review (lost provenance / cross-references); addition = info. URLs compared ignoring trailing slash and host case. |
 | CWE (`database_specific.cwe_ids`), GitHub severity label | Removal/change = review; addition = info. |
 | `id`, `published`, `withdrawn` | Changes = review (withdrawing is flagged). |
@@ -256,6 +256,10 @@ and every such finding says why.
   per-list limit. None of this is a run-time
   guarantee: a crafted custom list of about 1.5 MB took over a minute in one local measurement, and a file
   near the 25 MB size limit can take far longer.
+- The tool does not compare versions, so a `range-bound-converted` finding cannot say whether any release
+  changes status. Check the package's release history. If a value stays the same on both sides, the finding
+  says that this end now includes or excludes it. Several values of one kind in a range are listed without
+  being paired.
 - It compares two files you provide; it does not fetch advisories or talk to GitHub.
 - A newer OSV schema may allow things this version rejects (for example a new ecosystem); you would
   see an `unknown-ecosystem`-style error until the vendored schema is updated.
