@@ -216,6 +216,33 @@ function knownRangeConverted(known: string, end: AddedEnd, where: string, path: 
   };
 }
 
+/** Every end in an entry's ranges, sorted and without repeats so that array order cannot decide anything. */
+function endsOf(entry: JsonObject): string[] {
+  const ends = new Set<string>();
+  for (const range of asObjectArray(getOwn(entry, "ranges"))) {
+    for (const event of asObjectArray(getOwn(range, "events"))) {
+      for (const kind of ["fixed", "last_affected"] as const) {
+        const value = getOwn(event, kind);
+        if (isString(value)) ends.add(`"${kind}" ${value}`);
+      }
+    }
+  }
+  return [...ends].sort();
+}
+
+function knownRangeNoteRemoved(known: string, ends: string[], endMoved: boolean, label: string, path: string): Finding {
+  return {
+    code: "known-range-removed",
+    level: "review",
+    path: `${path}.database_specific`,
+    message: `${KNOWN_RANGE} "${shorten(known, 80)}" was removed from ${label}, whose ranges still end at ${previewList(ends)}.`,
+    why: endMoved
+      ? "The end also changed in this edit, so a note about the old end may no longer apply. Confirm the new end is right, and that the note recorded nothing else."
+      : "The ranges keep the same end, so tools that read only the range events are not affected. Confirm the note recorded nothing the end does not say.",
+    before: known,
+  };
+}
+
 function spellingChanged(kind: EventKind, from: string, to: string, where: string, path: string, strict: boolean): Finding {
   const fromZero = hasLeadingZero(from);
   const toZero = hasLeadingZero(to);
@@ -546,10 +573,19 @@ function diffPair(b: JsonObject, a: JsonObject, ai: number, out: Finding[], ctx:
   }
 
   diffSeverity(getOwn(b, "severity"), getOwn(a, "severity"), `${path}.severity`, ` (affected ${label})`, out);
-  const replaced = diffRanges(b, a, label, path, pa?.ecosystem ?? pb?.ecosystem, knownRangeRemoved(b, a), out, ctx);
+  const known = knownRangeRemoved(b, a);
+  const replaced = diffRanges(b, a, label, path, pa?.ecosystem ?? pb?.ecosystem, known, out, ctx);
   diffVersions(b, a, label, path, out);
+  let reported = replaced;
+  const endsAfter = endsOf(a);
+  // With no end left, the note may be all that said where the range stops, so that stays an ordinary removed field.
+  if (known !== undefined && !replaced && endsAfter.length > 0) {
+    const endMoved = JSON.stringify(endsOf(b)) !== JSON.stringify(endsAfter);
+    out.push(knownRangeNoteRemoved(known, endsAfter, endMoved, label, path));
+    reported = true;
+  }
   // Every other key of database_specific is still compared, so a value dropped alongside it is still reported.
-  const rest = (entry: JsonObject): JsonValue => (replaced ? withoutKnownRange(remainder(entry)) : remainder(entry));
+  const rest = (entry: JsonObject): JsonValue => (reported ? withoutKnownRange(remainder(entry)) : remainder(entry));
   diffGeneric(rest(b), rest(a), path, out);
 }
 

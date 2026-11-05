@@ -11,6 +11,10 @@ This changes finding codes and allow-list coverage. The cases come from running 
   was reported as an added event and a removed field, and the second suggested the value may have been dropped by
   accident. The finding says whether the two name the same end, comparing strings only. A `--allow` list naming
   `range-event-added,field-removed` no longer covers this case.
+- New `known-range-removed` finding: `last_known_affected_version_range` removed while the ranges still have an
+  end. This was `field-removed`, which suggested the value may have been dropped by accident, although the end
+  had usually moved too. It still needs review, and it says whether the end also changed. With no end left it
+  stays `field-removed`. `--allow field-removed` no longer covers this case.
 - New `version-spelling-changed` finding: a range value that changes only in leading zeros, such as `2025.08.14` to
   `2025.8.14`. `--allow range-event-changed` no longer covers this case.
 - New `version-leading-zero` warning from `validate`, for range events in `npm` packages and `SEMVER` ranges. The
