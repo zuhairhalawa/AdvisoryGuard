@@ -4,9 +4,10 @@
 
 This changes finding codes and allow-list coverage. The cases come from running the tool on real advisory edits.
 
-- New `sibling-package-unchanged` finding: version ranges changed for one package but not for another in the same
-  advisory that had the same version data. It needs review, because packages often share a fix but can really
-  differ. A `--allow` list that used to pass such an edit now also has to name this code.
+- New `sibling-package-unchanged` finding: a range end changed for one package but not for another in the same
+  advisory that had the same version data. A changed start does not count, because packages can have different
+  histories. It needs review, because packages often share a fix but can really differ. A `--allow` list that used
+  to pass such an edit now also has to name this code.
 - New `known-range-converted` finding: `last_known_affected_version_range` replaced by a range's one new end. This
   was reported as an added event and a removed field, and the second suggested the value may have been dropped by
   accident. The finding says whether the two name the same end, comparing strings only. A `--allow` list naming
