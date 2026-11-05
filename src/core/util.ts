@@ -70,10 +70,31 @@ export function plural(n: number, singular: string, pluralForm = singular + "s")
 
 const BACKSLASH = String.fromCharCode(92);
 
-/** Escape terminal control characters in untrusted text before printing. */
+// ASCII escapes only, so re-encoding this file cannot change what the pattern matches.
+// Cf covers bidi controls, zero-width characters and the BOM; Zl/Zp are line and paragraph separators.
+// Default_Ignorable_Code_Point covers the rest of what renderers normally draw as nothing, such as
+// U+034F, variation selectors and Hangul fillers.
+// eslint-disable-next-line no-control-regex
+const UNSAFE_FOR_TERMINAL = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\p{Cf}\p{Default_Ignorable_Code_Point}\p{Zl}\p{Zp}]/gu;
+
+// The same set minus U+0000-U+001F, which JSON.stringify already escapes inside strings. Its own
+// layout uses line feeds, so they must stay.
+const UNSAFE_IN_JSON = /[\u007f-\u009f\p{Cf}\p{Default_Ignorable_Code_Point}\p{Zl}\p{Zp}]/gu;
+
+/** Escape characters in untrusted text that could control a terminal, start a new output line or hide text. */
 export function sanitizeForTerminal(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f?-??-?]/g, (c) =>
-    BACKSLASH + "u" + c.charCodeAt(0).toString(16).padStart(4, "0"),
-  );
+  return s.replace(UNSAFE_FOR_TERMINAL, (c) => {
+    const cp = c.codePointAt(0) as number;
+    const hex = cp.toString(16);
+    return cp > 0xffff ? `${BACKSLASH}u{${hex}}` : `${BACKSLASH}u${hex.padStart(4, "0")}`;
+  });
+}
+
+/** Indented JSON that is safe to print to a terminal. Parsing it gives back exactly the same value. */
+export function stringifyForTerminal(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(UNSAFE_IN_JSON, (c) => {
+    let escaped = "";
+    for (let i = 0; i < c.length; i++) escaped += `${BACKSLASH}u${c.charCodeAt(i).toString(16).padStart(4, "0")}`;
+    return escaped;
+  });
 }

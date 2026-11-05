@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Terminal output
+
+- Fixed the text sanitizer: its pattern contained literal `?` characters, so every `?` was printed as
+  `\u003f` while bidirectional and zero-width characters passed through unescaped. Line feeds in advisory
+  values are now escaped too, so they can no longer start a new output line. Other default-ignorable characters
+  (such as U+034F, variation selectors and Hangul fillers) are escaped as well.
+- `--json` output now writes the same characters as `\uXXXX` escapes. The parsed values are unchanged; only
+  the bytes differ.
+- Usage errors now escape file names and arguments.
+
 ## 0.1.0
 
 Initial release. Published to npm as `advisoryguard@0.1.0` on 2026-10-26.

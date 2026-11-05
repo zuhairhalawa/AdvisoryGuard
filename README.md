@@ -250,10 +250,16 @@ and every such finding says why.
 ## Security notes
 
 Input is parsed with `JSON.parse` only (no `eval`, no code or command execution from advisory
-content), is size-limited (25 MB) and depth-limited, and control characters in advisory text are
-escaped before being printed to a terminal. Files are opened read-only. The shipped source contains
-no network, child-process or dynamic-code APIs, and `npm run verify:pack` runs the installed CLI with
-all network access blocked to confirm it. `npm audit` reports no known vulnerabilities at release time.
+content), and is size-limited (25 MB) and depth-limited. Control characters other than tab, and line-break,
+bidirectional, zero-width and other default-ignorable characters, in advisory text and file names are
+escaped before being printed, in text and JSON output and in usage errors. The JSON parses back to the same
+values. Text that uses these characters legitimately, such as a Persian ZWNJ or a joined emoji, is shown
+with escapes in the report only. A value that literally contains the text `\u200b` can look the same as the
+real character in text output; JSON output tells them apart. Lookalike letters from other alphabets are not
+detected. Tests check the output bytes, not how any terminal draws them. Files are opened read-only. The
+shipped source contains no network, child-process or dynamic-code APIs, and `npm run verify:pack` runs the
+installed CLI with all network access blocked to confirm it. `npm audit` reports no known vulnerabilities at
+release time.
 This is a review aid, not a security boundary: it cannot decide whether an advisory is *correct*.
 
 ## Platforms

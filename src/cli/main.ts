@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { diffFiles, validateFile } from "../core/analyze.js";
 import { AdvisoryIoError } from "../core/load.js";
+import { sanitizeForTerminal, stringifyForTerminal } from "../core/util.js";
 import { diffToJson, validateToJson } from "../report/json.js";
 import { createStyle } from "../report/style.js";
 import { renderDiff, renderValidate } from "../report/text.js";
@@ -51,10 +52,10 @@ AdvisoryGuard is offline: it never makes network requests and never modifies inp
 function usageError(io: CliIo, message: string, json: boolean): number {
   if (json) {
     io.stdout.write(
-      JSON.stringify({ tool: "advisoryguard", toolVersion: VERSION, error: { kind: "usage", message }, exitCode: EXIT.USAGE }, null, 2) + "\n",
+      stringifyForTerminal({ tool: "advisoryguard", toolVersion: VERSION, error: { kind: "usage", message }, exitCode: EXIT.USAGE }) + "\n",
     );
   } else {
-    io.stderr.write(`advisoryguard: ${message}\nRun "advisoryguard --help" for usage.\n`);
+    io.stderr.write(`advisoryguard: ${sanitizeForTerminal(message)}\nRun "advisoryguard --help" for usage.\n`);
   }
   return EXIT.USAGE;
 }
