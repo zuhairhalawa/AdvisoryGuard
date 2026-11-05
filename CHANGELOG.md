@@ -42,8 +42,7 @@ Limits
   identical items and long lists of removed references no longer take quadratic time. This is not a limit on
   total run time.
 - `pairing-limit` findings now also cover range, custom and severity lists over the per-list limit, and their
-  counts match the entries reported separately. Lists whose items can never pair, such as lists of strings, give
-  no such finding.
+  counts match the entries reported separately. Lists of non-objects, such as strings, give no such finding.
 - `pairing-limit` now needs review instead of being informational, because the comparison is incomplete. Allowing
   the removed and added codes no longer makes such a run pass; `--allow pairing-limit` accepts it explicitly.
 - Array order no longer decides a result. Score ties are broken by content instead of position, and the work

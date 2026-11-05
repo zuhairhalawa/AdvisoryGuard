@@ -246,7 +246,8 @@ and every such finding says why.
 - A package or custom field name long enough to make the report larger than Node can hold as one string stops
   the run with an internal error (exit 70). It never gives a pass.
 - When changed ranges share no value, the tool cannot know which became which, so a report can pair them
-  differently from the edit you made. Every changed value is still listed.
+  differently from the edit you made. Every changed value is still reported, though the text report can shorten
+  long lists.
 - The comparison treats every JSON array as unordered, which is right for advisories but would be
   wrong for order-sensitive data in custom extension fields.
 - Matching of unmatched `affected` entries (the rename heuristic) and of their version ranges is bounded
@@ -255,7 +256,7 @@ and every such finding says why.
   Beyond those limits the entries or ranges are reported as removed/added, together with a `pairing-limit`
   finding. That finding needs review because the comparison is then incomplete, so allowing the removed and
   added codes is not enough for a run to pass; allow `pairing-limit` as well to accept it explicitly. Lists
-  whose items can never pair, such as lists of strings, give no such finding.
+  of non-objects, such as strings, give no such finding.
 - Those limits cover only that scoring work. They do not cover parsing, validation, exact matching,
   canonicalization, sorting or the other comparers. Custom list fields, severity lists and the other keys
   of events, severity entries and references have only the per-list limit. None of this is a run-time
