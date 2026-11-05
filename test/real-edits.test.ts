@@ -138,7 +138,7 @@ describe("a known range replaced by an end event", () => {
 
   it("does not apply when an end was also removed", () => {
     const r = diff(record(entry("a:lib", lastAt("2.0.0"), { known: "<= 2.0.0" })), record(entry("a:lib", fixedAt("2.1.0"))));
-    expect(reviewCodes(r).sort()).toEqual(["field-removed", "range-bound-converted"]);
+    expect(reviewCodes(r).sort()).toEqual(["known-range-removed", "range-bound-converted"]);
   });
 
   it("does not apply when the known range is not a string", () => {
@@ -155,8 +155,88 @@ describe("a known range replaced by an end event", () => {
       record({ package: { ecosystem: "Maven", name: "a:lib" }, ranges, ...(known ? { database_specific: { [KNOWN]: known } } : {}) } as JsonObject);
     const r1 = diff(mk([rangeA, rangeB], "< 6.0.0"), mk([endA, endB]));
     const r2 = diff(mk([rangeB, rangeA], "< 6.0.0"), mk([endB, endA]));
-    expect(reviewCodes(r1).sort()).toEqual(["field-removed", "range-event-added", "range-event-added"]);
+    expect(reviewCodes(r1).sort()).toEqual(["known-range-removed", "range-event-added", "range-event-added"]);
     expect(reviewCodes(r2).sort()).toEqual(reviewCodes(r1).sort());
+  });
+});
+
+describe("a known range removed while the range keeps an end", () => {
+  const before = record(entry("a:lib", fixedAt("8.6.1"), { known: "<= 8.6.0" }));
+  const after = record(entry("a:lib", fixedAt("8.6.1")));
+
+  it("is its own review finding, without the dropped by accident wording", () => {
+    const r = diff(before, after);
+    expect(reviewCodes(r)).toEqual(["known-range-removed"]);
+    expect(codes(r)).not.toContain("field-removed");
+    const f = r.findings[0];
+    expect(f?.before).toBe("<= 8.6.0");
+    expect(f?.message).toContain("<= 8.6.0");
+    expect(f?.message).toContain("fixed");
+    expect(f?.message).toContain("8.6.1");
+    expect(f?.why).not.toContain("accident");
+    expect(f?.why).toContain("same end");
+  });
+
+  it("does not loosen the exit code", () => {
+    expect(diff(before, after).status).toBe("review");
+    expect(cliDiff(before, after).code).toBe(1);
+  });
+
+  it("says so when the end also moved", () => {
+    const r = diff(record(entry("a:lib", fixedAt("8.0.32"), { known: "<= 8.0.31" })), record(entry("a:lib", fixedAt("8.0.33"))));
+    expect(reviewCodes(r).sort()).toEqual(["known-range-removed", "range-event-changed"]);
+    const f = r.findings.find((x) => x.code === "known-range-removed");
+    expect(f?.why).toContain("also changed");
+    expect(f?.why).not.toContain("same end");
+  });
+
+  it("does not call a reordered range a moved end", () => {
+    const events: JsonObject[] = [{ introduced: "0" }, { fixed: "1" }, { introduced: "2" }, { last_affected: "3" }];
+    const r = diff(record(entry("a:lib", events, { known: "<= 3" })), record(entry("a:lib", [...events].reverse())));
+    expect(r.findings.find((x) => x.code === "known-range-removed")?.why).toContain("same end");
+  });
+
+  it("works with last_affected as the end", () => {
+    const r = diff(record(entry("a:lib", lastAt("2"), { known: "< 3" })), record(entry("a:lib", lastAt("2"))));
+    expect(reviewCodes(r)).toEqual(["known-range-removed"]);
+    expect(r.findings[0]?.message).toContain("last_affected");
+  });
+
+  it("stays a dropped field when no end remains, because that really can lose data", () => {
+    const r = diff(record(entry("a:lib", OPEN, { known: "< 2" })), record(entry("a:lib", OPEN)));
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+    expect(r.findings[0]?.why).toContain("accident");
+  });
+
+  it("does not replace the conversion finding when the note became the end", () => {
+    const r = diff(record(entry("a:lib", OPEN, { known: "< 2" })), record(entry("a:lib", fixedAt("2"))));
+    expect(reviewCodes(r)).toEqual(["known-range-converted"]);
+  });
+
+  it("stays quiet when the note stays", () => {
+    const r = diff(before, record(entry("a:lib", fixedAt("8.6.1"), { known: "<= 8.6.0" })));
+    expect(codes(r)).toEqual([]);
+  });
+
+  it("treats a note that is not a string as an ordinary dropped field", () => {
+    const r = diff(record(entry("a:lib", fixedAt("2"), { known: 5 })), record(entry("a:lib", fixedAt("2"))));
+    expect(reviewCodes(r)).toEqual(["field-removed"]);
+  });
+
+  it("needs its own code in an allow list, which does not hide other removed fields", () => {
+    expect(diff(before, after, ["known-range-removed"]).status).toBe("clean");
+    expect(diff(before, after, ["field-removed"]).status).toBe("review");
+    expect(cliDiff(before, after, ["--allow", "known-range-removed"]).code).toBe(0);
+    const b = record(entry("a:lib", fixedAt("2"), { extra: { database_specific: { [KNOWN]: "< 2", note: "kept" } } }));
+    expect(diff(b, record(entry("a:lib", fixedAt("2"))), ["known-range-removed"]).status).toBe("review");
+  });
+
+  it("still reports another key dropped from database_specific", () => {
+    const b = record(entry("a:lib", fixedAt("2"), { extra: { database_specific: { [KNOWN]: "<= 1", note: "kept" } } }));
+    const r = diff(b, record(entry("a:lib", fixedAt("2"))));
+    expect(reviewCodes(r).sort()).toEqual(["field-removed", "known-range-removed"]);
+    const removed = r.findings.find((f) => f.code === "field-removed");
+    expect(removed?.before).toEqual({ note: "kept" });
   });
 });
 
@@ -228,7 +308,7 @@ describe("packages left out of a version change", () => {
       record(entry("a:one", fixedAt("2")), entry("a:two", fixedAt("2"), { known: "<= 1" })),
     );
     expect(codes(r)).not.toContain("sibling-package-unchanged");
-    expect(reviewCodes(r)).toEqual(["field-removed"]);
+    expect(reviewCodes(r)).toEqual(["known-range-removed"]);
   });
 
   it("counts a package whose note changed but whose ranges did not as left out", () => {
