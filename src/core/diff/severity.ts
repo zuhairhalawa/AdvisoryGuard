@@ -1,6 +1,6 @@
 import { canonicalCvss, cvss3BaseScore, cvss3Rating, diffCvssMetrics, parseCvss } from "../cvss.js";
 import type { ParsedCvss } from "../cvss.js";
-import { pairItems } from "../pairing.js";
+import { PAIRING_LIMIT_WHY, pairItems } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asObjectArray, getOwn, isString, shorten } from "../util.js";
 import { diffOtherKeys } from "./generic.js";
@@ -67,9 +67,10 @@ export function diffSeverity(
   if (skipped) {
     out.push({
       code: "pairing-limit",
-      level: "info",
+      level: "review",
       path: basePath,
       message: `Too many items in ${basePath} to match them up; changed items may be reported as removed and added.`,
+      why: PAIRING_LIMIT_WHY,
     });
   }
 

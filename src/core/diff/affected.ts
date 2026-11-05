@@ -1,4 +1,4 @@
-import { MAX_MATCHING_WORK, overlap, pairItems, setMinus } from "../pairing.js";
+import { MAX_MATCHING_WORK, PAIRING_LIMIT_WHY, overlap, pairItems, setMinus } from "../pairing.js";
 import type { WorkBudget } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asArray, asObjectArray, canonical, clone, getOwn, isObject, isString, shorten } from "../util.js";
@@ -494,7 +494,7 @@ export function diffAffected(
         const o = overlap(entrySet(b), entrySet(a));
         return o > 0 || sole ? o : -1;
       },
-      { budget, weight: entryWeight },
+      { budget, weight: entryWeight, tieKeyB: canonical, tieKeyA: canonical },
     );
     pairingSkipped = pairingSkipped || r.skipped;
     for (const p of r.pairs) {
@@ -519,26 +519,39 @@ export function diffAffected(
   if (pairingSkipped && (restB.length > 0 || restA.length > 0)) {
     out.push({
       code: "pairing-limit",
-      level: "info",
+      level: "review",
       path: "affected",
       message: `Too many unmatched affected entries to search for renamed packages; the ${restB.length} removed and ${restA.length} added entries are reported separately.`,
+      why: PAIRING_LIMIT_WHY,
     });
   }
 
   matched.sort((x, y) => x.bi - y.bi || x.ai - y.ai);
-  for (const { bi, ai, exact } of matched) {
-    if (exact) continue;
+  const changed = matched.filter((m) => !m.exact);
+  // All pairs share one budget, so spend it in content order: the order of the arrays must not decide
+  // which entries fall back. Findings are still reported in array order.
+  const spendOrder = changed
+    .map((m) => ({ ...m, key: `${canonical(bs[m.bi])}\u0000${canonical(as[m.ai])}` }))
+    .sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
+  const reports = new Map<number, Finding[]>();
+  for (const { bi, ai } of spendOrder) {
     const b = bs[bi];
     const a = as[ai];
-    if (b && a) diffPair(b, a, ai, out, ctx);
+    const report: Finding[] = [];
+    if (b && a) diffPair(b, a, ai, report, ctx);
+    reports.set(bi, report);
+  }
+  for (const { bi } of changed) {
+    for (const f of reports.get(bi) ?? []) out.push(f);
   }
 
   if (ctx.rangesSkipped) {
     out.push({
       code: "pairing-limit",
-      level: "info",
+      level: "review",
       path: "affected",
       message: "A matching limit was reached while pairing version ranges; some ranges are reported as removed and added instead of changed.",
+      why: PAIRING_LIMIT_WHY,
     });
   }
 

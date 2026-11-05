@@ -14,6 +14,10 @@ export const MAX_PAIR_CANDIDATES = 250_000;
  */
 export const MAX_MATCHING_WORK = 20_000_000;
 
+/** Why a `pairing-limit` finding needs review: the run can no longer vouch for what it could not compare. */
+export const PAIRING_LIMIT_WHY =
+  "A matching limit was reached, so some items were not fully compared and changes can appear as separate removals and additions. Check the files directly, or allow this code if that is acceptable.";
+
 /** Work allowance shared by several pairItems calls in one comparison. */
 export interface WorkBudget {
   remaining: number;
@@ -41,13 +45,34 @@ export interface PairOptions<B, A> {
   /** When both are given, each comparison spends `weight(b, a)` from `budget`; running out skips the phase. */
   budget?: WorkBudget;
   weight?: (b: B, a: A) => number;
+  /** Content used to break score ties. Defaults to `canonB` and `canonA`. */
+  tieKeyB?: (b: B) => string;
+  tieKeyA?: (a: A) => string;
+}
+
+/** Rank of each listed item by content. Items with equal content are interchangeable, so they share a rank. */
+function contentRanks<T>(items: readonly T[], indices: readonly number[], key: (item: T) => string): Map<number, number> {
+  const keyed = indices.map((i) => ({ i, k: key(items[i] as T) }));
+  keyed.sort((x, y) => (x.k < y.k ? -1 : x.k > y.k ? 1 : 0));
+  const ranks = new Map<number, number>();
+  let rank = -1;
+  let previous: string | undefined;
+  for (const { i, k } of keyed) {
+    if (k !== previous) {
+      rank++;
+      previous = k;
+    }
+    ranks.set(i, rank);
+  }
+  return ranks;
 }
 
 /**
  * 1. Items with identical canonical keys are paired first (so reordering never
  *    produces a difference).
  * 2. Remaining items are paired greedily by descending `score` (>= 0 means
- *    "eligible"; negative means "never pair"), ties broken by position.
+ *    "eligible"; negative means "never pair"). Ties are broken by content, so
+ *    the order of the arrays never decides a pairing.
  */
 export function pairItems<B, A>(
   bs: readonly B[],
@@ -122,7 +147,10 @@ export function pairItems<B, A>(
         if (s >= 0) cands.push({ s, bi, ai });
       }
     }
-    cands.sort((x, y) => y.s - x.s || x.bi - y.bi || x.ai - y.ai);
+    const rankB = contentRanks(bs, freeB, options.tieKeyB ?? canonB);
+    const rankA = contentRanks(as, freeA, options.tieKeyA ?? canonA);
+    const rank = (ranks: Map<number, number>, i: number): number => ranks.get(i) as number;
+    cands.sort((x, y) => y.s - x.s || rank(rankB, x.bi) - rank(rankB, y.bi) || rank(rankA, x.ai) - rank(rankA, y.ai) || x.bi - y.bi || x.ai - y.ai);
     for (const c of cands) {
       if (usedB.has(c.bi) || usedA.has(c.ai)) continue;
       usedB.add(c.bi);

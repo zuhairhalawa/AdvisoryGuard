@@ -201,8 +201,8 @@ references, scheme-less URLs, non-semver versions in a SEMVER range, ...). JSON 
 `format` keywords (`uri`, `date-time`) are treated as annotations, as in the specification's default
 mode, so a genuine GitHub record with a scheme-less reference URL is valid with a warning.
 
-**diff** - semantic comparison, independent of key order, array order and formatting (Limitations names the
-cases where array order matters):
+**diff** - semantic comparison, independent of key order, array order and formatting. Reordering an array can
+change only the order findings are listed in and the indexes in custom-list paths:
 
 | Area | Behavior |
 | --- | --- |
@@ -239,9 +239,6 @@ and every such finding says why.
 - Rename detection is heuristic: when exactly one unmatched affected entry per ecosystem remains
   on each side it is treated as the same entry. A genuine "replace package A with unrelated package B"
   edit looks the same and is still reported as review.
-- When items are matched and several score the same (entries, ranges, severity entries, list items), their
-  position in the array breaks the tie, so reordering them can change which pairing a report shows. It did
-  not change the verdict in any case tried.
 - A key dropped from an event, severity entry or reference is named only if that item is on both sides. If
   the item's own value also changed, its own finding is reported and the dropped key is not named.
 - The comparison treats every JSON array as unordered, which is right for advisories but would be
@@ -249,10 +246,9 @@ and every such finding says why.
 - Matching of unmatched `affected` entries (the rename heuristic) and of their version ranges is bounded
   to 250,000 candidate comparisons per list (per ecosystem in the rename step) and 20 million units of
   scoring work per comparison. A unit is one scored pair plus the size of the pair's smaller token set.
-  Beyond those limits the entries or ranges are reported as removed/added (still "needs review") together
-  with a `pairing-limit` notice. Past the work limit, the order of the `affected` entries decides which of
-  them fall back, which can change how many ranges are reported as changed rather than removed and added.
-  Such a run still needs review, unless those codes are allowed with `--allow`.
+  Beyond those limits the entries or ranges are reported as removed/added, together with a `pairing-limit`
+  finding. That finding needs review because the comparison is then incomplete, so allowing the removed and
+  added codes is not enough for a run to pass; `--allow pairing-limit` accepts it explicitly.
 - Those limits cover only that scoring work. They do not cover parsing, validation, exact matching,
   canonicalization, sorting or the other comparers. Custom list fields, severity lists and the other keys
   of events, severity entries and references have only the per-list limit. None of this is a run-time

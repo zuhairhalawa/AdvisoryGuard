@@ -452,14 +452,24 @@ describe("fallback accounting in diffAffected", () => {
     expect(notices(out)).toHaveLength(1);
   });
 
-  it("can report different totals for reversed entries past the work limit, as the README says", () => {
+  it("reports the same findings for reversed entries past the work limit", () => {
     const b = [ranged("p", [range("1", "1.5"), range("2", "2.5")]), ranged("q", [range("3", "3.5"), range("4", "4.5"), range("5", "5.5")])];
     const a = [ranged("p", [range("1", "1.6"), range("2", "2.6")]), ranged("q", [range("3", "3.6"), range("4", "4.6"), range("5", "5.6")])];
     const totals = (fs: Finding[]): number[] =>
       ["range-event-changed", "range-removed", "range-added", "pairing-limit"].map((c) => fs.filter((f) => f.code === c).length);
+    const sorted = (fs: Finding[]): string[] => fs.map((f) => `${f.code}|${f.path}|${f.message}`).sort();
     // Enough for both entry comparisons (5 + 7 units) and the 4 range comparisons of p (3 units each), not those of q.
-    expect(totals(run3(b, a, 24))).toEqual([2, 3, 3, 1]);
-    expect(totals(run3([...b].reverse(), [...a].reverse(), 24))).toEqual([0, 5, 5, 1]);
+    const forward = run3(b, a, 24);
+    const backward = run3([...b].reverse(), [...a].reverse(), 24);
+    expect(totals(forward)).toEqual([2, 3, 3, 1]);
+    expect(sorted(backward)).toEqual(sorted(forward));
+    expect(paths(forward, "range-event-changed")).toEqual(["affected[npm/p]", "affected[npm/p]"]);
+  });
+
+  it("keeps findings in array order, whatever order the budget was spent in", () => {
+    const b = [ranged("z", [range("1", "1.5")]), ranged("a", [range("2", "2.5")])];
+    const a = [ranged("z", [range("1", "1.6")]), ranged("a", [range("2", "2.6")])];
+    expect(paths(run3(b, a), "range-event-changed")).toEqual(["affected[npm/z]", "affected[npm/a]"]);
   });
 
   it("gives a notice when a range list exceeds the per-list candidate limit", () => {
@@ -1089,7 +1099,7 @@ describe("limits outside affected", () => {
     expect(codes(r).filter((c) => c === "list-item-added")).toHaveLength(over);
     const notices = r.findings.filter((f) => f.code === "pairing-limit");
     expect(notices.map((f) => f.path)).toEqual(["database_specific.list"]);
-    expect(notices[0]?.level).toBe("info");
+    expect(notices[0]?.level).toBe("review");
     expect(notices[0]?.message).toMatch(/may be reported as removed and added/);
   });
 
@@ -1104,8 +1114,108 @@ describe("limits outside affected", () => {
       Array.from({ length: over }, (_, i) => ({ type: "CVSS_V3", score: `${tag}-${i}` }));
     const out: Finding[] = [];
     diffSeverity(mk("a"), mk("b"), "severity", "", out);
-    expect(out.filter((f) => f.code === "pairing-limit").map((f) => [f.path, f.level])).toEqual([["severity", "info"]]);
+    expect(out.filter((f) => f.code === "pairing-limit").map((f) => [f.path, f.level])).toEqual([["severity", "review"]]);
     expect(out.filter((f) => f.code === "severity-removed")).toHaveLength(over);
+  });
+});
+
+describe("a matching limit in the verdict", () => {
+  const over = Math.ceil(Math.sqrt(MAX_PAIR_CANDIDATES)) + 1;
+  const entries = (prefix: string): JsonObject =>
+    doc(FIXED, {
+      affected: Array.from({ length: over }, (_, i) => ({
+        package: { ecosystem: "npm", name: `${prefix}${i}` },
+        versions: [`${i}.0.0`],
+      })),
+    });
+  const ranges = (minor: number): JsonObject =>
+    doc(FIXED, {
+      affected: [
+        {
+          package: { ecosystem: "npm", name: "p" },
+          ranges: Array.from({ length: over }, (_, j) => ({ type: "ECOSYSTEM", events: [{ introduced: `${j}.0.0` }, { fixed: `${j}.${minor}.0` }] })),
+        },
+      ],
+    });
+
+  it("stays in review when the removed and added codes are allowed for entries", () => {
+    const allow = ["package-removed", "package-added"];
+    expect(diff(entries("b"), entries("a"), allow).status).toBe("review");
+    expect(cliDiff(entries("b"), entries("a"), ["--allow", allow.join(",")]).code).toBe(1);
+  });
+
+  it("stays in review when the removed and added codes are allowed for ranges", () => {
+    const allow = ["range-removed", "range-added"];
+    expect(diff(ranges(1), ranges(2), allow).status).toBe("review");
+  });
+
+  it("passes only when the limit itself is allowed too", () => {
+    expect(diff(entries("b"), entries("a"), ["package-removed", "package-added", "pairing-limit"]).status).toBe("clean");
+    expect(diff(ranges(1), ranges(2), ["range-removed", "range-added", "pairing-limit"]).status).toBe("clean");
+  });
+
+  it("explains why the limit needs review", () => {
+    const notice = diff(ranges(1), ranges(2)).findings.find((f) => f.code === "pairing-limit");
+    expect(notice?.level).toBe("review");
+    expect(notice?.why).toMatch(/not fully compared/);
+  });
+
+  it("does not need review below the limit", () => {
+    expect(codes(diff(doc(FIXED), doc(FIXED)))).toEqual([]);
+  });
+});
+
+describe("array order does not decide a result", () => {
+  const sortedFindings = (r: { findings: Finding[] }): string[] => r.findings.map((f) => `${f.code}|${f.path}|${f.message}`).sort();
+  function permutations<T>(items: T[]): T[][] {
+    if (items.length < 2) return [items];
+    return items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]));
+  }
+  function expectSameAcrossOrders<T>(before: T[], after: T[], build: (list: T[]) => JsonObject, allowCodes: string[]): void {
+    const first = diff(build(before), build(after));
+    for (const b of permutations(before)) {
+      for (const a of permutations(after)) {
+        expect(sortedFindings(diff(build(b), build(a)))).toEqual(sortedFindings(first));
+        for (const code of allowCodes) {
+          expect(diff(build(b), build(a), [code]).status).toBe(diff(build(before), build(after), [code]).status);
+        }
+      }
+    }
+  }
+
+  it("pairs tied ranges the same way, including when one pairing would be a conversion", () => {
+    const withRanges = (rs: JsonObject[]): JsonObject => doc(FIXED, { affected: [{ package: { ecosystem: "npm", name: "p" }, ranges: rs }] });
+    const range = (events: JsonObject[]): JsonObject => ({ type: "ECOSYSTEM", events });
+    const before = [range([{ introduced: "1" }, { fixed: "2" }]), range([{ introduced: "3" }, { last_affected: "4" }])];
+    const after = [range([{ introduced: "5" }, { fixed: "6" }]), range([{ introduced: "7" }, { last_affected: "8" }])];
+    expectSameAcrossOrders(before, after, withRanges, ["range-event-changed", "range-bound-converted"]);
+  });
+
+  it("pairs tied renamed entries the same way", () => {
+    const withEntries = (es: JsonObject[]): JsonObject => doc(FIXED, { affected: es });
+    const entry = (name: string, versions: string[]): JsonObject => ({ package: { ecosystem: "npm", name }, versions });
+    const before = [entry("a", ["1", "2"]), entry("b", ["1", "3"])];
+    const after = [entry("c", ["1", "4"]), entry("d", ["1", "5"])];
+    expectSameAcrossOrders(before, after, withEntries, ["package-renamed", "versions-removed"]);
+  });
+
+  it("pairs tied severity entries of one type the same way", () => {
+    const score = (c: string): string => `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:${c}/I:N/A:N`;
+    const severity = (c: string, extra = "N"): JsonObject => ({ type: "CVSS_V3", score: `${score(c).slice(0, -3)}A:${extra}` });
+    const withSeverity = (ss: JsonObject[]): JsonObject => doc(FIXED, { severity: ss });
+    expectSameAcrossOrders([severity("L"), severity("H")], [severity("N", "L"), severity("N", "H")], withSeverity, ["severity-changed"]);
+  });
+
+  it("gives the same codes and values for tied items in a custom list", () => {
+    const withList = (list: JsonObject[]): JsonObject => doc(FIXED, { database_specific: { list } });
+    const item = (x: string): JsonObject => ({ id: 1, x });
+    const pairsOf = (r: { findings: Finding[] }): string[] => r.findings.map((f) => `${f.code}|${String(f.before)}|${String(f.after)}`).sort();
+    const first = pairsOf(diff(withList([item("a"), item("b")]), withList([item("c"), item("d")])));
+    for (const b of permutations([item("a"), item("b")])) {
+      for (const a of permutations([item("c"), item("d")])) {
+        expect(pairsOf(diff(withList(b), withList(a)))).toEqual(first);
+      }
+    }
   });
 });
 
@@ -1188,7 +1298,7 @@ describe("matching work stays bounded at full scale", () => {
     const r = diff(before, after);
     expect(Date.now() - t0).toBeLessThan(30000);
     expect(codes(r)).toContain("pairing-limit");
-    expect(new Set(r.findings.filter((f) => f.level === "review").map((f) => f.path)).size).toBe(300);
+    expect(new Set(r.findings.filter((f) => f.level === "review" && f.code !== "pairing-limit").map((f) => f.path)).size).toBe(300);
     expect(r.status).toBe("review");
   });
 

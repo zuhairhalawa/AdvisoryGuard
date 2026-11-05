@@ -1,4 +1,4 @@
-import { pairItems } from "../pairing.js";
+import { PAIRING_LIMIT_WHY, pairItems } from "../pairing.js";
 import type { Finding, JsonObject, JsonValue } from "../types.js";
 import { asObjectArray, canonical, getOwn, hasOwn, isObject, isString, shorten } from "../util.js";
 
@@ -92,9 +92,10 @@ export function diffGeneric(
     if (skipped) {
       out.push({
         code: "pairing-limit",
-        level: "info",
+        level: "review",
         path,
         message: `Too many items in ${path} to match them up; changed items may be reported as removed and added.`,
+        why: PAIRING_LIMIT_WHY,
       });
     }
     for (const { bi, ai, exact } of pairs) {

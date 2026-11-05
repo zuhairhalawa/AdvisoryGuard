@@ -34,9 +34,14 @@ Limits
 - The scoring work of `affected` entry and range matching is now limited per comparison, and long runs of
   identical items and long lists of removed references no longer take quadratic time. This is not a limit on
   total run time.
-- `pairing-limit` notices now also cover range, custom and severity lists over the per-list limit, and their
+- `pairing-limit` findings now also cover range, custom and severity lists over the per-list limit, and their
   counts match the entries reported separately. A range notice is given only when the skipped ranges could have
   been paired.
+- `pairing-limit` now needs review instead of being informational, because the comparison is incomplete. Allowing
+  the removed and added codes no longer makes such a run pass; `--allow pairing-limit` accepts it explicitly.
+- Array order no longer decides a result. Score ties are broken by content instead of position, and the work
+  budget is spent in content order. Before this, reordering an array could change a finding's code and, with an
+  allow list, the exit code.
 
 Invalid input
 
