@@ -302,6 +302,33 @@ describe("packages left out of a version change", () => {
     expect(codes(diff(record(...b), record(...a)))).not.toContain("sibling-package-unchanged");
   });
 
+  it("stays quiet when only the start of one package's range changed, because packages can have different histories", () => {
+    const r = diff(
+      record(entry("a:split", fixedAt("2")), entry("a:whole", fixedAt("2"))),
+      record(entry("a:split", [{ introduced: "1" }, { fixed: "2" }]), entry("a:whole", fixedAt("2"))),
+    );
+    expect(reviewCodes(r)).toEqual(["range-event-changed"]);
+    expect(codes(r)).not.toContain("sibling-package-unchanged");
+  });
+
+  it("still fires when the start and the end of one package's range both changed", () => {
+    const r = diff(
+      record(entry("a:one", fixedAt("2")), entry("a:two", fixedAt("2"))),
+      record(entry("a:one", [{ introduced: "1" }, { fixed: "3" }]), entry("a:two", fixedAt("2"))),
+    );
+    expect(codes(r)).toContain("sibling-package-unchanged");
+  });
+
+  it("names a package whose start changed but whose end was left behind", () => {
+    const r = diff(
+      record(entry("a:one", fixedAt("2")), entry("a:two", fixedAt("2"))),
+      record(entry("a:one", fixedAt("3")), entry("a:two", [{ introduced: "1" }, { fixed: "2" }])),
+    );
+    const f = r.findings.find((x) => x.code === "sibling-package-unchanged");
+    expect(f?.after).toEqual(["Maven/a:two"]);
+    expect(f?.message).toContain("Range ends");
+  });
+
   it("stays quiet when only a known range note left one package and its ranges did not change", () => {
     const r = diff(
       record(entry("a:one", fixedAt("2"), { known: "<= 1" }), entry("a:two", fixedAt("2"), { known: "<= 1" })),

@@ -613,9 +613,10 @@ function reportLeftOutPackages(bs: JsonObject[], as: JsonObject[], matched: { bi
       group = { changed: new Set(), same: new Set() };
       groups.set(key, group);
     }
-    // Only the ranges count as a change: a known range note can go on its own without changing what the advisory covers.
-    const rangesChanged = canonical(asArray(getOwn(a, "ranges"))) !== canonical(asArray(getOwn(b, "ranges")));
-    (rangesChanged ? group.changed : group.same).add(labelOf(a, ai));
+    // Only a change to an end counts. Packages often share a fix but can have different histories, so a new
+    // start is not a shared change, and a known range note can go on its own without changing what is covered.
+    const endChanged = JSON.stringify(endsOf(a)) !== JSON.stringify(endsOf(b));
+    (endChanged ? group.changed : group.same).add(labelOf(a, ai));
   }
   for (const key of [...groups.keys()].sort()) {
     const group = groups.get(key);
@@ -627,7 +628,7 @@ function reportLeftOutPackages(bs: JsonObject[], as: JsonObject[], matched: { bi
       code: "sibling-package-unchanged",
       level: "review",
       path: `affected[${leftOut[0] as string}]`,
-      message: `Version ranges changed for ${previewList([...group.changed].sort())} but not for ${previewList(leftOut)}, which had the same version data before this edit.`,
+      message: `Range ends changed for ${previewList([...group.changed].sort())} but not for ${previewList(leftOut)}, which had the same version data before this edit.`,
       why: "Packages in one advisory often share a fix. If these do, they need the same change. If they really differ, this can be allowed.",
       after: leftOut,
     });
