@@ -101,9 +101,14 @@ jobs:
       - name: Dry run of the upload
         if: github.event_name != 'push'
         shell: bash
+        # npm refuses even a dry run for a version it already has, and main is on one between releases.
+        # So this uses a version that can never exist. The change stays on this runner.
         run: |
-          npm stage publish "./$TARBALL" --access public --tag "$DIST_TAG" --dry-run
-          echo "Dry run only. Nothing was uploaded." >> "$GITHUB_STEP_SUMMARY"
+          DRY_VERSION="$VERSION-dryrun.$GITHUB_RUN_ID"
+          npm version "$DRY_VERSION" --no-git-tag-version --ignore-scripts
+          npm pack --silent --ignore-scripts
+          npm stage publish "./advisoryguard-$DRY_VERSION.tgz" --access public --tag next --dry-run
+          echo "Dry run only, as $DRY_VERSION. Nothing was uploaded." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload to the npm stage queue
         if: github.event_name == 'push'

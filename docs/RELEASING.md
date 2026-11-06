@@ -63,4 +63,4 @@ Then publish the GitHub release, attaching the `tarball` artifact from the workf
 
 ## Checking the workflow without releasing
 
-Pull requests that change `release.yml`, and manual runs from the Actions tab, do everything except the upload. They end with `npm stage publish --dry-run`.
+Pull requests that change `release.yml`, and manual runs from the Actions tab, do everything except the upload. They end with `npm stage publish --dry-run`, using a throwaway version number, because npm refuses even a dry run for a version it already has.
