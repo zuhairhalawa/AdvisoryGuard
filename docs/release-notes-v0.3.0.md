@@ -38,7 +38,7 @@ Each row compares this release with 0.2.0 on real before and after files. No exi
 
 What this does and does not show:
 
-- **Left-out packages:** the two findings are real defects, in the maintainer's own pull requests, which the check was designed from. The older 35 edits included 7 multi-package edits where an end changed, and it gave no false alarms on them, but it has not yet caught a problem in anyone else's edit. An earlier version fired on 2 public edits that only changed a start. Both looked intentional, which is why a start no longer counts.
+- **Left-out packages:** the two findings are in the maintainer's own pull requests, which the check was designed from. In both, the project's own advisory lists the left-out packages as patched, but those versions are not on Maven Central, so reviewers may decide differently. The older 35 edits included 7 multi-package edits where an end changed, and it gave no false alarms on them, but it has not yet caught a problem in anyone else's edit. An earlier version fired on 2 public edits that only changed a start. Both looked intentional, which is why a start no longer counts.
 - **Spelling:** the only misspelled versions found were in the maintainer's own pull requests. It has not met one anywhere else, so it is untested on other data. It gave no false warnings there.
 - **Known range removed:** this improves the explanation and does not reduce the number of stops. Of the 13 notes removed while the end stayed the same in the first 96 public edits, none named exactly that end, and some differed a lot, such as `< 8.0.0` with `fixed 8.6.40`. Telling these apart needs version comparison, so they still need review.
 
